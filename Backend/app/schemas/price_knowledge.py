@@ -50,6 +50,8 @@ class ResolveFoodPriceInput(BaseModel):
     food_item_id: str
     requested_quantity: float = Field(..., gt=0)
     requested_unit: PriceUnit = PriceUnit.PER_GRAM
+    requested_basis: PriceBasis = PriceBasis.EDIBLE_PORTION
+    edible_portion_factor: Optional[float] = Field(None, gt=0, le=1.0)
     user_location: Optional[LocationSchema] = None
     include_promotions: bool = False
 
@@ -58,6 +60,7 @@ class ResolveFoodPriceResponse(BaseModel):
     food_item_id: str
     requested_quantity: float
     requested_unit: PriceUnit
+    requested_basis: PriceBasis = PriceBasis.EDIBLE_PORTION
     estimated_cost_idr: Optional[int] = None
     source_observation_ids: List[str] = []
     normalized_unit_price_idr: Optional[float] = None
@@ -65,6 +68,7 @@ class ResolveFoodPriceResponse(BaseModel):
     freshness_status: PriceFreshness
     confidence: PriceConfidence
     resolution_status: PriceResolutionStatus
+    edible_portion_factor_applied: Optional[float] = None
     provenance: Dict[str, Any] = {}
 
     model_config = ConfigDict(from_attributes=True)
@@ -79,6 +83,7 @@ class CandidateItemCostResponse(BaseModel):
     confidence: PriceConfidence
     location_match: LocationMatch
     source_observation_ids: List[str] = []
+    price_basis_applied: PriceBasis = PriceBasis.EDIBLE_PORTION
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -92,6 +97,7 @@ class CandidateCostPreviewResponse(BaseModel):
     total_item_count: int
     item_costs: List[CandidateItemCostResponse]
     confidence: PriceConfidence
+    uses_stale_prices: bool = False
     price_policy_version: str = PricePolicy.VERSION
 
     model_config = ConfigDict(from_attributes=True)

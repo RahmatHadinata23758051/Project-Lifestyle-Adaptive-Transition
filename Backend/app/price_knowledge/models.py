@@ -54,13 +54,15 @@ class ResolvedFoodPriceDTO:
     food_item_id: str
     requested_quantity: float
     requested_unit: PriceUnit
-    estimated_cost_idr: Optional[int]
-    source_observation_ids: List[str]
-    normalized_unit_price_idr: Optional[float]
-    location_match: LocationMatch
-    freshness_status: PriceFreshness
-    confidence: PriceConfidence
-    resolution_status: PriceResolutionStatus
+    requested_basis: PriceBasis = PriceBasis.EDIBLE_PORTION
+    estimated_cost_idr: Optional[int] = None
+    source_observation_ids: List[str] = field(default_factory=list)
+    normalized_unit_price_idr: Optional[float] = None
+    location_match: LocationMatch = LocationMatch.UNKNOWN
+    freshness_status: PriceFreshness = PriceFreshness.STALE
+    confidence: PriceConfidence = PriceConfidence.UNKNOWN
+    resolution_status: PriceResolutionStatus = PriceResolutionStatus.NO_PRICE_DATA
+    edible_portion_factor_applied: Optional[float] = None
     provenance: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -74,6 +76,7 @@ class ItemCostEstimateDTO:
     confidence: PriceConfidence
     location_match: LocationMatch
     source_observation_ids: List[str] = field(default_factory=list)
+    price_basis_applied: PriceBasis = PriceBasis.EDIBLE_PORTION
 
 
 @dataclass
@@ -86,4 +89,5 @@ class CandidateCostEstimateDTO:
     total_item_count: int
     item_costs: List[ItemCostEstimateDTO]
     confidence: PriceConfidence
+    uses_stale_prices: bool = False
     price_policy_version: str = PricePolicy.VERSION

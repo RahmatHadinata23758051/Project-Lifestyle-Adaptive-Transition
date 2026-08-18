@@ -1,11 +1,12 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 from app.price_knowledge.constants import (
     PriceUnit,
+    PriceBasis,
     PriceConfidence,
     PriceResolutionStatus,
+    PriceFreshness,
     CostCompleteness,
-    LocationMatch,
     PricePolicy,
 )
 from app.price_knowledge.models import (
@@ -34,24 +35,30 @@ def estimate_candidate_cost(
     candidate: FoodCandidateSetDTO,
     user_location: Optional[LocationDTO] = None,
     observations: Optional[List[FoodPriceObservationDTO]] = None,
+    edible_portion_factors_by_food_id: Optional[Dict[str, float]] = None,
     reference_date: Optional[datetime] = None,
 ) -> CandidateCostEstimateDTO:
     """
     Pure deterministic candidate cost estimation (CANDIDATE_COST_V01).
     Estimates consumption cost for a food candidate set without optimizing budget.
-    Preserves completeness state (COMPLETE vs PARTIAL vs UNAVAILABLE).
+    Preserves completeness state (COMPLETE vs PARTIAL vs UNAVAILABLE), basis consistency,
+    and exposes uses_stale_prices transparency.
     """
     item_costs: List[ItemCostEstimateDTO] = []
     priced_sum = 0
     priced_count = 0
     confidences: List[PriceConfidence] = []
+    uses_stale_prices = False
+    ep_factors = edible_portion_factors_by_food_id or {}
 
     for item in candidate.items:
-        # Determine quantity and unit based on grams or discrete unit
+        factor = ep_factors.get(item.food_item_id)
         res = resolve_food_price(
             food_item_id=item.food_item_id,
             requested_quantity=item.grams,
             requested_unit=PriceUnit.PER_GRAM,
+            requested_basis=PriceBasis.EDIBLE_PORTION,
+            edible_portion_factor=factor,
             user_location=user_location,
             observations=observations,
             reference_date=reference_date,
@@ -67,6 +74,7 @@ def estimate_candidate_cost(
                 confidence=res.confidence,
                 location_match=res.location_match,
                 source_observation_ids=res.source_observation_ids,
+                price_basis_applied=PriceBasis.EDIBLE_PORTION,
             )
         )
 
@@ -78,6 +86,8 @@ def estimate_candidate_cost(
             priced_sum += res.estimated_cost_idr
             priced_count += 1
             confidences.append(res.confidence)
+            if res.resolution_status == PriceResolutionStatus.STALE_ONLY or res.freshness_status == PriceFreshness.STALE:
+                uses_stale_prices = True
         else:
             confidences.append(PriceConfidence.UNKNOWN)
 
@@ -103,5 +113,6 @@ def estimate_candidate_cost(
         total_item_count=total_items,
         item_costs=item_costs,
         confidence=candidate_conf,
+        uses_stale_prices=uses_stale_prices,
         price_policy_version=PricePolicy.CANDIDATE_COST_POLICY_VERSION,
     )

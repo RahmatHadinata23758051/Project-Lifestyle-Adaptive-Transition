@@ -71,6 +71,8 @@ def resolve_price(
         food_item_id=payload.food_item_id,
         requested_quantity=payload.requested_quantity,
         requested_unit=payload.requested_unit,
+        requested_basis=payload.requested_basis,
+        edible_portion_factor=payload.edible_portion_factor,
         user_location=user_loc,
         observations=observations,
         include_promotions=payload.include_promotions,
@@ -157,5 +159,6 @@ def preview_candidate_cost(
         total_item_count=cost_estimate.total_item_count,
         item_costs=item_cost_responses,
         confidence=cost_estimate.confidence,
+        uses_stale_prices=cost_estimate.uses_stale_prices,
         price_policy_version=cost_estimate.price_policy_version,
     )

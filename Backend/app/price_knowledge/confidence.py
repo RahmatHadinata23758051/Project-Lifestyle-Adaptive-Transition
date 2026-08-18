@@ -1,5 +1,11 @@
 from typing import Optional
-from app.price_knowledge.constants import LocationMatch, PriceConfidence, PriceFreshness
+from app.price_knowledge.constants import (
+    LocationMatch,
+    PriceConfidence,
+    PriceFreshness,
+    PriceSourceType,
+    PriceQuality,
+)
 from app.price_knowledge.models import LocationDTO
 
 
@@ -43,21 +49,47 @@ def evaluate_location_match(
 def derive_resolution_confidence(
     location_match: LocationMatch,
     freshness: PriceFreshness,
+    source_type: PriceSourceType,
+    quality_status: PriceQuality,
     observation_count: int,
+    basis_conversion_applied: bool = False,
 ) -> PriceConfidence:
     """
-    Categorical confidence derivation based on location match and data freshness.
+    Deterministic Confidence Policy (PRICE_CONFIDENCE_V01).
+    Evaluates multi-dimensional evidence:
+    - Source trustworthiness & verification status
+    - Location proximity
+    - Observation freshness
+    - Basis alignment
     """
-    if freshness == PriceFreshness.FRESH:
+    is_trusted_source = source_type in (
+        PriceSourceType.GOVERNMENT_DATA,
+        PriceSourceType.MANUAL_CURATED,
+        PriceSourceType.RETAILER_FEED,
+    ) and quality_status in (PriceQuality.VERIFIED, PriceQuality.CURATED)
+
+    # Stale data is always LOW
+    if freshness == PriceFreshness.STALE:
+        return PriceConfidence.LOW
+
+    # Fresh + Trusted Source
+    if freshness == PriceFreshness.FRESH and is_trusted_source:
         if location_match in (LocationMatch.EXACT_LOCAL, LocationMatch.SAME_CITY):
             return PriceConfidence.HIGH
         elif location_match == LocationMatch.SAME_PROVINCE:
             return PriceConfidence.MEDIUM
         elif location_match == LocationMatch.NATIONAL:
-            return PriceConfidence.MEDIUM if observation_count >= 3 else PriceConfidence.LOW
+            return PriceConfidence.MEDIUM if observation_count >= 2 else PriceConfidence.LOW
 
-    if freshness == PriceFreshness.AGING:
+    # Fresh + User Reported
+    if freshness == PriceFreshness.FRESH and not is_trusted_source:
         if location_match in (LocationMatch.EXACT_LOCAL, LocationMatch.SAME_CITY):
+            return PriceConfidence.MEDIUM
+        return PriceConfidence.LOW
+
+    # Aging
+    if freshness == PriceFreshness.AGING:
+        if is_trusted_source and location_match in (LocationMatch.EXACT_LOCAL, LocationMatch.SAME_CITY):
             return PriceConfidence.MEDIUM
         return PriceConfidence.LOW
 

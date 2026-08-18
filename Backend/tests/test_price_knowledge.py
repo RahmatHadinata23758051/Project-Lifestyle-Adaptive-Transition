@@ -72,6 +72,7 @@ def make_obs(
     days_ago: int = 5,
     is_promo: bool = False,
     package_grams: Optional[float] = None,
+    price_basis: PriceBasis = PriceBasis.EDIBLE_PORTION,
 ) -> FoodPriceObservationDTO:
     dt = datetime.now(timezone.utc) - timedelta(days=days_ago)
     return FoodPriceObservationDTO(
@@ -80,6 +81,7 @@ def make_obs(
         amount=amount,
         unit=unit,
         price_idr=price_idr,
+        price_basis=price_basis,
         location=LocationDTO(country="ID", province=province, city_regency=city),
         observed_at=dt,
         is_promotional=is_promo,
@@ -198,6 +200,112 @@ def test_candidate_cost_estimation_complete_partial_and_unavailable():
     assert est_partial.known_subtotal_idr == 4000
     assert est_partial.priced_item_count == 2
     assert est_partial.total_item_count == 3
+
+
+def test_as_sold_vs_edible_portion_conversion_and_incompatible_basis_safety():
+    # Banana price: Rp 20.000 / kg AS_SOLD (with peel)
+    obs_banana = FoodPriceObservationDTO(
+        id="o_banana",
+        food_item_id="f_banana",
+        amount=1.0,
+        unit=PriceUnit.PER_KG,
+        price_idr=20000,
+        price_basis=PriceBasis.AS_SOLD,
+        location=LocationDTO(country="ID", city_regency="Jakarta"),
+    )
+
+    # 1. Candidate requests 150g EDIBLE_PORTION with edible portion factor = 0.60 (60% flesh, 40% peel)
+    # Effective as-sold weight = 150g / 0.60 = 250g as-sold.
+    # Cost = 250g * (Rp 20.000 / 1000g) = Rp 5.000
+    res_with_factor = resolve_food_price(
+        food_item_id="f_banana",
+        requested_quantity=150.0,
+        requested_unit=PriceUnit.PER_GRAM,
+        requested_basis=PriceBasis.EDIBLE_PORTION,
+        edible_portion_factor=0.60,
+        user_location=LocationDTO(country="ID", city_regency="Jakarta"),
+        observations=[obs_banana],
+    )
+    assert res_with_factor.resolution_status in (PriceResolutionStatus.RESOLVED, PriceResolutionStatus.RESOLVED_WITH_FALLBACK)
+    assert res_with_factor.estimated_cost_idr == 5000
+    assert res_with_factor.edible_portion_factor_applied == 0.60
+
+    # 2. Candidate requests 150g EDIBLE_PORTION without edible portion factor
+    # Invariant: Must NOT silently compute 150g * 20 Rp/g = Rp 3.000!
+    res_no_factor = resolve_food_price(
+        food_item_id="f_banana",
+        requested_quantity=150.0,
+        requested_unit=PriceUnit.PER_GRAM,
+        requested_basis=PriceBasis.EDIBLE_PORTION,
+        edible_portion_factor=None,  # Missing factor!
+        user_location=LocationDTO(country="ID", city_regency="Jakarta"),
+        observations=[obs_banana],
+    )
+    assert res_no_factor.resolution_status == PriceResolutionStatus.INCOMPATIBLE_BASIS
+    assert res_no_factor.estimated_cost_idr is None
+
+
+def test_source_quality_impact_on_confidence():
+    loc = LocationDTO(country="ID", city_regency="Surabaya")
+
+    # 1. Verified Government source -> HIGH confidence
+    obs_gov = FoodPriceObservationDTO(
+        id="o_gov",
+        food_item_id="f_rice",
+        amount=1.0,
+        unit=PriceUnit.PER_KG,
+        price_idr=15000,
+        price_basis=PriceBasis.EDIBLE_PORTION,
+        source_type=PriceSourceType.GOVERNMENT_DATA,
+        quality_status=PriceQuality.VERIFIED,
+        location=loc,
+    )
+    res_gov = resolve_food_price("f_rice", 1000.0, PriceUnit.PER_GRAM, user_location=loc, observations=[obs_gov])
+    assert res_gov.confidence == PriceConfidence.HIGH
+
+    # 2. User Reported source -> MEDIUM confidence (even if local & fresh)
+    obs_user = FoodPriceObservationDTO(
+        id="o_user",
+        food_item_id="f_rice",
+        amount=1.0,
+        unit=PriceUnit.PER_KG,
+        price_idr=15000,
+        price_basis=PriceBasis.EDIBLE_PORTION,
+        source_type=PriceSourceType.USER_REPORTED,
+        quality_status=PriceQuality.USER_REPORTED,
+        location=loc,
+    )
+    res_user = resolve_food_price("f_rice", 1000.0, PriceUnit.PER_GRAM, user_location=loc, observations=[obs_user])
+    assert res_user.confidence == PriceConfidence.MEDIUM
+
+
+def test_stale_only_candidate_cost_preserves_completeness_with_stale_flag():
+    # 120 days old observations (STALE)
+    dt_stale = datetime.now(timezone.utc) - timedelta(days=120)
+    obs_stale_rice = FoodPriceObservationDTO("o_sr", "f_rice", 1000.0, PriceUnit.PER_GRAM, 15000, price_basis=PriceBasis.EDIBLE_PORTION, observed_at=dt_stale)
+    obs_stale_egg = FoodPriceObservationDTO("o_se", "f_egg", 100.0, PriceUnit.PER_GRAM, 5000, price_basis=PriceBasis.EDIBLE_PORTION, observed_at=dt_stale)
+
+    item_rice = FoodCandidateItemDTO("f_rice", "Nasi Putih", FoodPlannerRole.STAPLE, None, "100g", 100.0, 130.0, 2.7, 0.3, 28.0)
+    item_egg = FoodCandidateItemDTO("f_egg", "Telur Ayam", FoodPlannerRole.PROTEIN_SOURCE, None, "50g", 50.0, 75.0, 6.0, 5.0, 0.5)
+
+    cand = FoodCandidateSetDTO(
+        candidate_id="c_stale_cand",
+        slot_id="slot_1",
+        items=[item_rice, item_egg],
+        total_energy_kcal=205.0,
+        total_protein_g=8.7,
+        total_fat_g=5.3,
+        total_carbohydrate_g=28.5,
+        energy_deviation_kcal=0.0,
+        absolute_energy_deviation=0.0,
+        match_status=CandidateMatchStatus.STRICT_MATCH,
+    )
+
+    est = estimate_candidate_cost(cand, observations=[obs_stale_rice, obs_stale_egg])
+    assert est.cost_completeness == CostCompleteness.COMPLETE
+    assert est.estimated_cost_idr == 4000
+    assert est.uses_stale_prices is True
+    assert est.confidence == PriceConfidence.LOW  # Weakest link is LOW due to stale data!
 
 
 def test_location_fallback_hierarchy():
