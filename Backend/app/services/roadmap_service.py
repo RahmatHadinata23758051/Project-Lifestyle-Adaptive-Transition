@@ -24,6 +24,10 @@ def create_user_transition_roadmap(
 ) -> Dict[str, Any]:
     """
     Onboard a user and generate a persisted TransitionRoadmap with daily plans.
+    Adheres strictly to:
+    - Day 1 = Baseline / Stabilization Day (step_index = 0, target = baseline).
+    - Separation of Measurements (Wake/Bedtime) from Micro-Quests (Hydration/Movement).
+    - Unambiguous meal terminology (Meal 1, Meal 2).
     """
     # 1. Feasibility Check
     feasibility = evaluate_feasibility(
@@ -72,7 +76,6 @@ def create_user_transition_roadmap(
     db.add(goal_orm)
 
     # 4. Save Constraints
-    constraint_orms = []
     for c in constraints_data:
         c_orm = ConstraintRecord(
             user_id=user.id,
@@ -84,7 +87,6 @@ def create_user_transition_roadmap(
             is_flexible=c.is_flexible,
         )
         db.add(c_orm)
-        constraint_orms.append(c)
 
     # 5. Generate Roadmap Entity
     start_dt = datetime.strptime(start_date_str, "%Y-%m-%d") if start_date_str else datetime.now(timezone.utc)
@@ -109,61 +111,79 @@ def create_user_transition_roadmap(
     for day_num in range(1, goal_data.duration_days + 1):
         plan_dt = start_dt + timedelta(days=day_num - 1)
         plan_date_str = plan_dt.strftime("%Y-%m-%d")
-        
-        # Initial step indexing: 1 step every 2 days
-        initial_step = (day_num - 1) // 2
 
-        target_times = calculate_daily_target_times(
-            baseline_wake_str=baseline_data.wake_time,
-            target_wake_str=goal_data.target_wake_time,
-            baseline_bed_str=baseline_data.bedtime,
-            target_bed_str=goal_data.target_bedtime or "23:00",
-            current_step_index=initial_step,
-            step_size_minutes=15,
-        )
+        # P0.2: Day 1 = BASELINE / STABILIZATION DAY (target matches baseline exactly)
+        if day_num == 1:
+            step_idx = 0
+            day_target_wake = baseline_data.wake_time
+            day_target_bed = baseline_data.bedtime
+            plan_state = "BASELINE"
+        else:
+            step_idx = (day_num - 1) // 2
+            target_times = calculate_daily_target_times(
+                baseline_wake_str=baseline_data.wake_time,
+                target_wake_str=goal_data.target_wake_time,
+                baseline_bed_str=baseline_data.bedtime,
+                target_bed_str=goal_data.target_bedtime or "23:00",
+                current_step_index=step_idx,
+                step_size_minutes=15,
+            )
+            day_target_wake = target_times["target_wake_time"]
+            day_target_bed = target_times["target_bedtime"]
+            plan_state = "PLANNED"
 
         daily_plan = DailyPlanRecord(
             roadmap_id=roadmap_orm.id,
             plan_date=plan_date_str,
             day_number=day_num,
-            step_index=initial_step,
-            target_bedtime=target_times["target_bedtime"],
-            target_wake_time=target_times["target_wake_time"],
+            step_index=step_idx,
+            target_bedtime=day_target_bed,
+            target_wake_time=day_target_wake,
             budget_estimate=daily_budget,
-            state="PLANNED",
+            state=plan_state,
         )
         db.add(daily_plan)
         db.flush()
 
         # Generate collision-free plan items for this day
-        # Day of week mapping
         dow_str = plan_dt.strftime("%A").upper()
         active_constraints = [c for c in constraints_data if c.day_of_week.value == dow_str]
 
-        # Item 1: Wake & Hydrate (Scheduled at target wake time)
+        # P0.3 Item 1: MEASUREMENT - Bangun Tidur
         wake_item = PlanItemRecord(
             daily_plan_id=daily_plan.id,
             domain=PlanDomain.WAKE.value,
-            title=f"Bangun & Hidrasi (Target {target_times['target_wake_time']})",
-            scheduled_time=target_times["target_wake_time"],
-            duration_minutes=15,
+            title="Bangun Tidur",
+            scheduled_time=day_target_wake,
+            duration_minutes=0,
             is_critical=True,
         )
         db.add(wake_item)
 
-        # Item 2: Lunch (Preferred 12:30, resolved with constraints)
+        # P0.3 Item 2: MICRO-QUEST - Minum Air 1 Gelas Setelah Bangun
+        hydrate_item = PlanItemRecord(
+            daily_plan_id=daily_plan.id,
+            domain=PlanDomain.NUTRITION.value,
+            title="Minum 1 Gelas Air Setelah Bangun",
+            scheduled_time=day_target_wake,
+            duration_minutes=5,
+            is_critical=False,
+        )
+        db.add(hydrate_item)
+
+        # P1.3 Item 3: Meal 1 (Makan Siang)
         lunch_time, _ = resolve_schedule_collisions("12:30", 30, active_constraints, buffer_minutes=15)
         lunch_item = PlanItemRecord(
             daily_plan_id=daily_plan.id,
             domain=PlanDomain.NUTRITION.value,
-            title="Makan Siang Terjadwal",
+            title="Meal 1 (Makan Siang)",
             scheduled_time=lunch_time,
             preferred_time="12:30",
             duration_minutes=30,
         )
         db.add(lunch_item)
 
-        # Item 3: Movement (Preferred 16:30, resolved with constraints)
+        # Item 4: Micro-Movement (15 Menit)
         movement_time, _ = resolve_schedule_collisions("16:30", 15, active_constraints, buffer_minutes=15)
         movement_item = PlanItemRecord(
             daily_plan_id=daily_plan.id,
@@ -175,12 +195,24 @@ def create_user_transition_roadmap(
         )
         db.add(movement_item)
 
-        # Item 4: Bedtime Preparation (Scheduled at target bedtime)
+        # P1.3 Item 5: Meal 2 (Makan Malam)
+        dinner_time, _ = resolve_schedule_collisions("19:00", 30, active_constraints, buffer_minutes=15)
+        dinner_item = PlanItemRecord(
+            daily_plan_id=daily_plan.id,
+            domain=PlanDomain.NUTRITION.value,
+            title="Meal 2 (Makan Malam)",
+            scheduled_time=dinner_time,
+            preferred_time="19:00",
+            duration_minutes=30,
+        )
+        db.add(dinner_item)
+
+        # Item 6: Persiapan Tidur (Wind-down)
         bed_item = PlanItemRecord(
             daily_plan_id=daily_plan.id,
             domain=PlanDomain.SLEEP.value,
-            title=f"Persiapan Tidur (Target {target_times['target_bedtime']})",
-            scheduled_time=target_times["target_bedtime"],
+            title="Persiapan Tidur (Redupkan Lampu)",
+            scheduled_time=day_target_bed,
             duration_minutes=15,
             is_critical=True,
         )
@@ -199,10 +231,14 @@ def create_user_transition_roadmap(
 
 
 def get_active_daily_plan(db: Session, roadmap_id: str, day_number: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    """Get active daily plan record with its items."""
+    """Get active daily plan record with transition context and items."""
     roadmap = db.query(Roadmap).filter(Roadmap.id == roadmap_id).first()
     if not roadmap:
         return None
+
+    user = db.query(User).filter(User.id == roadmap.user_id).first()
+    baseline = user.baseline if user else None
+    goal = user.goal if user else None
 
     target_day = day_number if day_number is not None else roadmap.current_day
     daily_plan = db.query(DailyPlanRecord).filter(
@@ -216,6 +252,17 @@ def get_active_daily_plan(db: Session, roadmap_id: str, day_number: Optional[int
     # Calculate actual spending today
     total_spent = sum(item.actual_cost or 0.0 for item in daily_plan.items)
 
+    # Contextual transition state string
+    if target_day == 1:
+        transition_state = "BASELINE"
+    elif daily_plan.state == "EVALUATED":
+        transition_state = "EVALUATED"
+    else:
+        transition_state = "PROGRESSING" if roadmap.current_step_index > 0 else "STABILIZING"
+
+    # Separate measurement from routine tasks
+    wake_measurement = next((i for i in daily_plan.items if i.domain == PlanDomain.WAKE.value and i.is_critical), None)
+
     return {
         "daily_plan_id": daily_plan.id,
         "roadmap_id": roadmap.id,
@@ -225,9 +272,21 @@ def get_active_daily_plan(db: Session, roadmap_id: str, day_number: Optional[int
         "step_index": daily_plan.step_index,
         "target_wake_time": daily_plan.target_wake_time,
         "target_bedtime": daily_plan.target_bedtime,
+        "baseline_wake_time": baseline.wake_time if baseline else "10:00",
+        "baseline_bedtime": baseline.bedtime if baseline else "02:00",
+        "final_target_wake_time": goal.target_wake_time if goal else "07:00",
+        "final_target_bedtime": goal.target_bedtime if goal else "23:00",
+        "transition_state": transition_state,
+        "weekly_budget": baseline.weekly_food_budget if baseline else 350000.0,
         "daily_budget": daily_plan.budget_estimate,
         "total_spent_today": total_spent,
         "remaining_budget_today": round(daily_plan.budget_estimate - total_spent, 2),
+        "wake_measurement": {
+            "id": wake_measurement.id if wake_measurement else None,
+            "target_time": daily_plan.target_wake_time,
+            "actual_time": wake_measurement.actual_time if wake_measurement else None,
+            "is_recorded": wake_measurement.status == PlanItemStatus.COMPLETED.value if wake_measurement else False,
+        } if wake_measurement else None,
         "items": [
             {
                 "id": item.id,
