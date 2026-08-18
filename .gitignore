@@ -1,0 +1,58 @@
+# Environment variables & secrets
+.env
+*.env
+.env.local
+.env.*.local
+
+# Git Worktrees (Multi-agent workspace isolation)
+.worktrees/
+worktrees/
+
+# IDE & Editor caches
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# OS & Temp files
+tmp/
+temp/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Node / JS dependencies & builds
+node_modules/
+dist/
+build/
+.next/
+out/
+.turbo/
+
+# Python / FastAPI
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Dart / Flutter
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+ios/Flutter/.last_build_id
+ios/Pods/
+android/.gradle/
+android/app/build/
+*.lock
