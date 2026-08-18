@@ -16,6 +16,15 @@ from app.models.assessment import (
     ActivityBaseline,
     AssessmentSnapshotRecord,
 )
+from app.models.food_knowledge import (
+    FoodDataSourceRecord,
+    FoodItemRecord,
+    FoodNutrientsRecord,
+    FoodAliasRecord,
+    FoodServingRecord,
+    FoodItemAllergenRecord,
+    FoodPreparationRequirementRecord,
+)
 
 __all__ = [
     "User",
@@ -38,4 +47,11 @@ __all__ = [
     "NutritionBaseline",
     "ActivityBaseline",
     "AssessmentSnapshotRecord",
+    "FoodDataSourceRecord",
+    "FoodItemRecord",
+    "FoodNutrientsRecord",
+    "FoodAliasRecord",
+    "FoodServingRecord",
+    "FoodItemAllergenRecord",
+    "FoodPreparationRequirementRecord",
 ]

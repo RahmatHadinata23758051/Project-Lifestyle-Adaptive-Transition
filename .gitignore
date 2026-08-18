@@ -12,6 +12,7 @@ prompt*.md
 *.prompt.md
 dynamic-assessment-architecture.md
 nutrition*.md
+food-knowledge*.md
 
 # Databases
 *.db
