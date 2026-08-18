@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from app.models.identity import GoalDomain, GoalPriority, GoalStatus
 from app.assessment.constants import DomainCompleteness, FieldClassification
 
@@ -13,6 +13,15 @@ class AssessmentGoalInput(BaseModel):
 
 class AssessmentGoalsUpdate(BaseModel):
     goals: List[AssessmentGoalInput] = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def validate_single_primary_goal(self) -> "AssessmentGoalsUpdate":
+        primary_count = sum(1 for g in self.goals if g.priority == GoalPriority.PRIMARY and g.status == GoalStatus.ACTIVE)
+        if primary_count > 1:
+            raise ValueError("Maksimal hanya boleh ada 1 active goal dengan priority PRIMARY untuk mencegah konflik adaptasi lintas domain.")
+        if primary_count == 0:
+            raise ValueError("Minimal harus ada 1 active goal dengan priority PRIMARY sebagai acuan utama.")
+        return self
 
 
 class DomainStatusSummary(BaseModel):
