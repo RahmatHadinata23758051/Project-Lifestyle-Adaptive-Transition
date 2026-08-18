@@ -34,6 +34,15 @@ class MealSlotResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BaselineMealTimingInput(BaseModel):
+    slot_type: MealSlotType = MealSlotType.MAIN_MEAL
+    sequence: int
+    preferred_time: str
+    earliest_time: Optional[str] = None
+    latest_time: Optional[str] = None
+    duration_minutes: Optional[int] = None
+
+
 class ConstraintIntervalInput(BaseModel):
     name: str
     start_time: str
@@ -52,8 +61,10 @@ class MealStructurePreviewInput(BaseModel):
     baseline_snacks_per_day: Optional[int] = Field(None, ge=0, le=10)
     step_index: int = Field(0, ge=0)
     structure_state: MealStructureState = MealStructureState.BASELINE
+    baseline_timings: List[BaselineMealTimingInput] = []
     constraints: List[ConstraintIntervalInput] = []
     custom_energy_shares: Optional[List[float]] = None
+    minimum_slot_gap_minutes: Optional[int] = None
 
 
 class DailyMealScheduleResponse(BaseModel):

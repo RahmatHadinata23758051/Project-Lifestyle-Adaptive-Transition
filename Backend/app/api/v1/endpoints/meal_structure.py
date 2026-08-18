@@ -7,7 +7,11 @@ from app.core.auth import get_current_user, AuthenticatedUser
 from app.repositories.assessment_repository import AssessmentRepository
 from app.repositories.baseline_repository import BaselineRepository
 from app.repositories.constraint_repository import ConstraintRepository
-from app.meal_structure.models import ConstraintIntervalDTO, MealSlotDTO
+from app.meal_structure.models import (
+    ConstraintIntervalDTO,
+    MealSlotDTO,
+    BaselineMealTiming,
+)
 from app.meal_structure.scheduler import schedule_daily_meals
 from app.schemas.meal_structure import (
     MealStructurePreviewInput,
@@ -74,6 +78,19 @@ def preview_meal_structure(
             )
         )
 
+    # 5. Resolve Baseline Timings
+    baseline_timings_dto = [
+        BaselineMealTiming(
+            slot_type=bt.slot_type,
+            sequence=bt.sequence,
+            preferred_time=bt.preferred_time,
+            earliest_time=bt.earliest_time,
+            latest_time=bt.latest_time,
+            duration_minutes=bt.duration_minutes,
+        )
+        for bt in payload.baseline_timings
+    ]
+
     schedule_dto = schedule_daily_meals(
         date=payload.date,
         wake_time=wake_time,
@@ -83,8 +100,10 @@ def preview_meal_structure(
         baseline_snacks_per_day=baseline_snacks,
         step_index=payload.step_index,
         structure_state=payload.structure_state,
+        baseline_timings=baseline_timings_dto if baseline_timings_dto else None,
         constraints=merged_constraints,
         custom_energy_shares=payload.custom_energy_shares,
+        minimum_slot_gap_minutes=payload.minimum_slot_gap_minutes,
     )
 
     return DailyMealScheduleResponse(

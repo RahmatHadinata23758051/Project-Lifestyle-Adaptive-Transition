@@ -29,6 +29,8 @@ class ScheduleFeasibilityStatus(str, Enum):
 
 class ScheduleProvenance(str, Enum):
     BASELINE = "BASELINE"
+    BASELINE_OBSERVED = "BASELINE_OBSERVED"
+    BASELINE_DERIVED = "BASELINE_DERIVED"
     USER_FIXED = "USER_FIXED"
     DERIVED = "DERIVED"
     SHIFTED_FOR_CONSTRAINT = "SHIFTED_FOR_CONSTRAINT"
@@ -38,14 +40,19 @@ class ScheduleProvenance(str, Enum):
 class MealScheduleReasonCode(str, Enum):
     NO_WAKE_CONTEXT = "NO_WAKE_CONTEXT"
     NO_SLEEP_CONTEXT = "NO_SLEEP_CONTEXT"
+    INVALID_WAKING_PERIOD = "INVALID_WAKING_PERIOD"
     INSUFFICIENT_FREE_WINDOWS = "INSUFFICIENT_FREE_WINDOWS"
+    OUTSIDE_ORIGINAL_WINDOW = "OUTSIDE_ORIGINAL_WINDOW"
     CONSTRAINT_COLLISION = "CONSTRAINT_COLLISION"
     FIXED_SLOT_CONFLICT = "FIXED_SLOT_CONFLICT"
     MEAL_SPACING_CONFLICT = "MEAL_SPACING_CONFLICT"
+    SLOT_SPACING_ADJUSTED = "SLOT_SPACING_ADJUSTED"
     CROSS_MIDNIGHT_HANDLED = "CROSS_MIDNIGHT_HANDLED"
     SHIFTED_AFTER_HARD_CONSTRAINT = "SHIFTED_AFTER_HARD_CONSTRAINT"
     SHIFTED_BEFORE_HARD_CONSTRAINT = "SHIFTED_BEFORE_HARD_CONSTRAINT"
     SHIFTED_WITH_SLEEP = "SHIFTED_WITH_SLEEP"
+    BASELINE_TIME_PRESERVED = "BASELINE_TIME_PRESERVED"
+    BASELINE_TIME_DERIVED = "BASELINE_TIME_DERIVED"
     NORMAL_BASELINE = "NORMAL_BASELINE"
 
 
@@ -65,12 +72,19 @@ class PreparationAvailabilityContext(str, Enum):
 
 
 class MealPolicy:
-    VERSION: str = "MEAL_STRUCTURE_P1_1"
-    MINIMUM_SLOT_SPACING_MINUTES: int = 120  # 2 hours minimum spacing between eating events
+    """
+    Centralized Chronos Product Scheduling Policy Parameters.
+    Documented as product scheduling defaults, not universal medical assertions.
+    """
+    VERSION: str = "MEAL_STRUCTURE_TRANSITION_V01"
+    DEFAULT_MINIMUM_SLOT_GAP_MINUTES: int = 120  # 2 hours minimum spacing between eating events
+    MINIMUM_SLOT_SPACING_MINUTES: int = 120      # Alias for backward compatibility
     DEFAULT_MEAL_DURATION_MINUTES: int = 30
     DEFAULT_SNACK_DURATION_MINUTES: int = 15
-    DEFAULT_WAKE_BUFFER_MINUTES: int = 45   # First meal scheduled ~45m after wake
-    DEFAULT_SLEEP_BUFFER_MINUTES: int = 90  # Last meal scheduled >= 90m before sleep
-    WINDOW_FLEXIBILITY_MARGIN_MINUTES: int = 45
+    DEFAULT_WAKE_BUFFER_MINUTES: int = 45        # First meal scheduled >= 45m after wake
+    DEFAULT_SLEEP_BUFFER_MINUTES: int = 90       # Last meal scheduled >= 90m before sleep
+    WINDOW_FLEXIBILITY_MARGIN_MINUTES: int = 45  # Default window boundary +/- 45m around preferred
     MAX_SCHEDULER_ITERATIONS: int = 25
     ENERGY_SHARE_TOLERANCE: float = 0.01
+    DEFAULT_SLOT_ENERGY_TOLERANCE_RATIO: float = 0.15  # +/- 15% range around slot energy target
+    CONSTRAINT_SHIFT_STEP_MINUTES: int = 5

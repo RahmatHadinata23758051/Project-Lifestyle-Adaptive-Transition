@@ -14,6 +14,22 @@ from app.meal_structure.constants import (
 
 
 @dataclass
+class MealStructureDefinition:
+    main_meals: int
+    snacks: int = 0
+
+
+@dataclass
+class BaselineMealTiming:
+    slot_type: MealSlotType
+    sequence: int
+    preferred_time: str
+    earliest_time: Optional[str] = None
+    latest_time: Optional[str] = None
+    duration_minutes: Optional[int] = None
+
+
+@dataclass
 class MealSlotDTO:
     slot_id: str
     slot_type: MealSlotType

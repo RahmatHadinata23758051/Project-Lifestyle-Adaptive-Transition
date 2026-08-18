@@ -4,10 +4,18 @@ from app.meal_structure.models import MealSlotDTO
 
 
 def get_default_energy_shares(slot_types: List[MealSlotType]) -> List[float]:
+    """
+    Default product energy distribution shares for Chronos (CHRONOS_MEAL_ENERGY_DISTRIBUTION_V01).
+    Explicit product scheduling defaults, not rigid clinical requirements.
+    """
     main_count = sum(1 for st in slot_types if st == MealSlotType.MAIN_MEAL)
     snack_count = sum(1 for st in slot_types if st == MealSlotType.SNACK)
 
-    if main_count == 2 and snack_count == 0:
+    if main_count == 1 and snack_count == 0:
+        return [1.0]
+    elif main_count == 1 and snack_count == 1:
+        return [0.70, 0.30]
+    elif main_count == 2 and snack_count == 0:
         return [0.50, 0.50]
     elif main_count == 2 and snack_count == 1:
         return [0.40, 0.40, 0.20]
@@ -17,8 +25,10 @@ def get_default_energy_shares(slot_types: List[MealSlotType]) -> List[float]:
         return [0.25, 0.30, 0.30, 0.15]
     elif main_count == 3 and snack_count == 2:
         return [0.25, 0.25, 0.25, 0.125, 0.125]
+    elif main_count == 4 and snack_count == 0:
+        return [0.25, 0.25, 0.25, 0.25]
     else:
-        # Generic proportional weighting: main meal = 2x weight of snack
+        # Proportional fallback weighting: main meal = 2x weight of snack
         weights = [2.0 if st == MealSlotType.MAIN_MEAL else 1.0 for st in slot_types]
         total_w = sum(weights)
         return [round(w / total_w, 4) for w in weights]
@@ -26,7 +36,7 @@ def get_default_energy_shares(slot_types: List[MealSlotType]) -> List[float]:
 
 def validate_energy_shares(shares: List[float]) -> None:
     if not shares:
-        raise ValueError("Energy shares list cannot be empty.")
+        raise ValueError("Daftar proporsi pembagian energi tidak boleh kosong.")
     
     total = sum(shares)
     if abs(total - 1.0) > MealPolicy.ENERGY_SHARE_TOLERANCE:
@@ -42,13 +52,19 @@ def allocate_slot_energy_targets(
     total_target_kcal: float,
     slots: List[MealSlotDTO],
     custom_shares: Optional[List[float]] = None,
-    tolerance_ratio: float = 0.15,
+    tolerance_ratio: Optional[float] = None,
 ) -> List[MealSlotDTO]:
     if total_target_kcal <= 0:
         raise ValueError("Total target energi harian harus bernilai positif.")
 
     if not slots:
         return []
+
+    ratio = (
+        tolerance_ratio
+        if tolerance_ratio is not None
+        else MealPolicy.DEFAULT_SLOT_ENERGY_TOLERANCE_RATIO
+    )
 
     shares = custom_shares if custom_shares is not None else get_default_energy_shares([s.slot_type for s in slots])
     
@@ -60,8 +76,8 @@ def allocate_slot_energy_targets(
     updated_slots: List[MealSlotDTO] = []
     for slot, share in zip(slots, shares):
         target_kcal = round(total_target_kcal * share, 1)
-        min_kcal = round(target_kcal * (1.0 - tolerance_ratio), 1)
-        max_kcal = round(target_kcal * (1.0 + tolerance_ratio), 1)
+        min_kcal = round(target_kcal * (1.0 - ratio), 1)
+        max_kcal = round(target_kcal * (1.0 + ratio), 1)
 
         updated_slots.append(
             MealSlotDTO(
