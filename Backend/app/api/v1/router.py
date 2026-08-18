@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     assessment,
     nutrition,
     foods,
+    meal_structure,
 )
 
 api_router = APIRouter()
@@ -20,3 +21,4 @@ api_router.include_router(user_state.router, prefix="/user-state", tags=["User S
 api_router.include_router(assessment.router, prefix="/assessment", tags=["Dynamic Assessment Intelligence"])
 api_router.include_router(nutrition.router, prefix="/nutrition", tags=["Nutrition Intelligence"])
 api_router.include_router(foods.router, prefix="/foods", tags=["Food Knowledge Foundation"])
+api_router.include_router(meal_structure.router, prefix="/meal-structure", tags=["Meal Structure & Scheduling"])
