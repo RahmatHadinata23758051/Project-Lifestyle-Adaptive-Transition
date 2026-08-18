@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     nutrition,
     foods,
     meal_structure,
+    food_candidates,
 )
 
 api_router = APIRouter()
@@ -22,3 +23,4 @@ api_router.include_router(assessment.router, prefix="/assessment", tags=["Dynami
 api_router.include_router(nutrition.router, prefix="/nutrition", tags=["Nutrition Intelligence"])
 api_router.include_router(foods.router, prefix="/foods", tags=["Food Knowledge Foundation"])
 api_router.include_router(meal_structure.router, prefix="/meal-structure", tags=["Meal Structure & Scheduling"])
+api_router.include_router(food_candidates.router, prefix="/food-candidates", tags=["Food Candidate Generation"])
