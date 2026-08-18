@@ -155,7 +155,7 @@ class OnboardingScreen extends ConsumerWidget {
       case 2:
         return _Step3Constraints(state: state, ref: ref, isDark: isDark);
       case 3:
-        return _Step4Feasibility(state: state, isDark: isDark);
+        return _Step4Feasibility(state: state, ref: ref, isDark: isDark);
       default:
         return const SizedBox.shrink();
     }
@@ -529,26 +529,64 @@ class _AddConstraintBottomSheetState extends State<_AddConstraintBottomSheet> {
 
 class _Step4Feasibility extends StatelessWidget {
   final OnboardingState state;
+  final WidgetRef ref;
   final bool isDark;
 
-  const _Step4Feasibility({required this.state, required this.isDark});
+  const _Step4Feasibility({
+    required this.state,
+    required this.ref,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
     final feas = state.feasibilityResult;
     final isFeasible = feas?['is_feasible'] ?? true;
     final message = feas?['feedback_message'] ?? 'Memeriksa kelayakan transisi...';
+    final recDays = feas?['recommended_duration_days'] as int? ?? state.durationDays;
+    final isLonger = recDays > state.durationDays;
+    final effectiveDuration = state.effectiveDurationDays ?? recDays;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Langkah 4: Evaluasi Kelayakan', style: AppTypography.h2),
+        const Text('Langkah 4: Evaluasi Kelayakan Transisi', style: AppTypography.h2),
         const SizedBox(height: 6),
         const Text(
-          'Hasil kalkulasi matematis terhadap batas pergeseran alami tubuh.',
+          'Chronos menghitung batasan pergeseran bertahap agar tubuh beradaptasi tanpa kelelahan.',
           style: AppTypography.body,
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
+
+        // Parameter Review Cards
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurfaceSecondary : AppColors.lightSurfaceSecondary,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              width: 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              _buildSummaryRow('Kondisi Saat Ini', 'Bangun ${state.wakeTime} • Tidur ${state.bedtime}'),
+              const Divider(height: 20),
+              _buildSummaryRow('Target Impian', 'Bangun ${state.targetWakeTime} • Tidur ${state.targetBedtime}'),
+              const Divider(height: 20),
+              _buildSummaryRow('Durasi Diminta', '${state.durationDays} Hari'),
+              if (isLonger) ...[
+                const Divider(height: 20),
+                _buildSummaryRow('Rekomendasi Chronos', '$recDays Hari', isHighlighted: true),
+              ],
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // Feasibility Decision Feedback
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -573,7 +611,9 @@ class _Step4Feasibility extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    isFeasible ? 'Target Realistis & Aman' : 'Penyesuaian Direkomendasikan',
+                    isFeasible
+                        ? 'Sesuai dengan Policy Transisi Chronos'
+                        : 'Penyesuaian Durasi Direkomendasikan',
                     style: AppTypography.bodyMedium.copyWith(
                       fontWeight: FontWeight.w700,
                       color: isFeasible
@@ -593,10 +633,54 @@ class _Step4Feasibility extends StatelessWidget {
             ],
           ),
         ),
+
+        // Explicit Decision Selection if recommendation is longer
+        if (isLonger) ...[
+          const SizedBox(height: 20),
+          const Text('Konfirmasi Durasi Roadmap:', style: AppTypography.h3),
+          const SizedBox(height: 10),
+          RadioListTile<int>(
+            value: recDays,
+            groupValue: effectiveDuration,
+            onChanged: (val) {
+              if (val != null) ref.read(onboardingProvider.notifier).setEffectiveDurationDays(val);
+            },
+            title: Text('Gunakan $recDays Hari (Direkomendasikan agar adaptasi bertahap)', style: AppTypography.bodyMedium),
+            activeColor: AppColors.primary,
+            contentPadding: EdgeInsets.zero,
+          ),
+          RadioListTile<int>(
+            value: state.durationDays,
+            groupValue: effectiveDuration,
+            onChanged: (val) {
+              if (val != null) ref.read(onboardingProvider.notifier).setEffectiveDurationDays(val);
+            },
+            title: Text('Tetap Gunakan ${state.durationDays} Hari (Pergeseran lebih intensif)', style: AppTypography.bodyMedium),
+            activeColor: AppColors.primary,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ],
+
         const SizedBox(height: 20),
-        const Text(
-          'Klik tombol di bawah untuk membuat roadmap transisi yang terpersonalisasi.',
+        Text(
+          'Roadmap akan dibuat dengan total durasi $effectiveDuration hari. Hari 1 akan dimulai sebagai Stabilization Day.',
           style: AppTypography.caption,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value, {bool isHighlighted = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: AppTypography.body),
+        Text(
+          value,
+          style: AppTypography.bodyMedium.copyWith(
+            fontWeight: FontWeight.w700,
+            color: isHighlighted ? AppColors.primary : null,
+          ),
         ),
       ],
     );

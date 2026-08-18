@@ -14,6 +14,7 @@ class OnboardingState {
   final String targetWakeTime;
   final String targetBedtime;
   final int durationDays;
+  final int? effectiveDurationDays;
   final List<Map<String, dynamic>> constraints;
   final Map<String, dynamic>? feasibilityResult;
   final bool isLoading;
@@ -29,6 +30,7 @@ class OnboardingState {
     this.targetWakeTime = '07:00',
     this.targetBedtime = '23:00',
     this.durationDays = 30,
+    this.effectiveDurationDays,
     this.constraints = const [],
     this.feasibilityResult,
     this.isLoading = false,
@@ -45,6 +47,7 @@ class OnboardingState {
     String? targetWakeTime,
     String? targetBedtime,
     int? durationDays,
+    int? effectiveDurationDays,
     List<Map<String, dynamic>>? constraints,
     Map<String, dynamic>? feasibilityResult,
     bool? isLoading,
@@ -60,6 +63,7 @@ class OnboardingState {
       targetWakeTime: targetWakeTime ?? this.targetWakeTime,
       targetBedtime: targetBedtime ?? this.targetBedtime,
       durationDays: durationDays ?? this.durationDays,
+      effectiveDurationDays: effectiveDurationDays ?? this.effectiveDurationDays,
       constraints: constraints ?? this.constraints,
       feasibilityResult: feasibilityResult ?? this.feasibilityResult,
       isLoading: isLoading ?? this.isLoading,
@@ -85,7 +89,8 @@ class OnboardingNotifier extends Notifier<OnboardingState> {
   void updateWeeklyFoodBudget(double budget) => state = state.copyWith(weeklyFoodBudget: budget);
   void updateTargetWakeTime(String time) => state = state.copyWith(targetWakeTime: time);
   void updateTargetBedtime(String time) => state = state.copyWith(targetBedtime: time);
-  void updateDurationDays(int days) => state = state.copyWith(durationDays: days);
+  void updateDurationDays(int days) => state = state.copyWith(durationDays: days, effectiveDurationDays: days);
+  void setEffectiveDurationDays(int days) => state = state.copyWith(effectiveDurationDays: days);
 
   void addConstraint(Map<String, dynamic> constraint) {
     state = state.copyWith(constraints: [...state.constraints, constraint]);
@@ -123,7 +128,12 @@ class OnboardingNotifier extends Notifier<OnboardingState> {
         baselineBedtime: state.bedtime,
         targetBedtime: state.targetBedtime,
       );
-      state = state.copyWith(isLoading: false, feasibilityResult: result);
+      final recDays = result['recommended_duration_days'] as int? ?? state.durationDays;
+      state = state.copyWith(
+        isLoading: false,
+        feasibilityResult: result,
+        effectiveDurationDays: recDays,
+      );
     } catch (e) {
       state = state.copyWith(isLoading: false, errorMessage: e.toString());
     }
@@ -133,6 +143,7 @@ class OnboardingNotifier extends Notifier<OnboardingState> {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
       final client = ref.read(apiClientProvider);
+      final finalDuration = state.effectiveDurationDays ?? state.durationDays;
       final response = await client.onboardUser(
         email: state.email,
         baseline: {
@@ -143,7 +154,7 @@ class OnboardingNotifier extends Notifier<OnboardingState> {
         goal: {
           'target_wake_time': state.targetWakeTime,
           'target_bedtime': state.targetBedtime,
-          'duration_days': state.durationDays,
+          'duration_days': finalDuration,
         },
         constraints: state.constraints,
       );
