@@ -82,15 +82,18 @@ def test_roadmap_generation_and_checkin_flow():
 
     roadmap_id = result["roadmap_id"]
 
-    # 2. Get today's plan
+    # 2. Get today's plan (P0.2 Day 1: Target matches baseline 10:00)
     today_plan = get_active_daily_plan(db, roadmap_id=roadmap_id, day_number=1)
     assert today_plan is not None
-    assert len(today_plan["items"]) == 4
+    assert today_plan["target_wake_time"] == "10:00"  # Day 1 is Baseline Day!
+    assert today_plan["target_bedtime"] == "02:00"
+    assert today_plan["transition_state"] == "BASELINE"
+    assert len(today_plan["items"]) == 6
     assert today_plan["total_spent_today"] == 0.0
     assert today_plan["remaining_budget_today"] == 50000.0
 
-    # 3. Check-in on Lunch item with spending
-    lunch_item = next(i for i in today_plan["items"] if "Makan Siang" in i["title"])
+    # 3. Check-in on Meal 1 (Makan Siang) with spending
+    lunch_item = next(i for i in today_plan["items"] if "Meal 1" in i["title"])
     checkin_res = process_item_checkin(
         db=db,
         item_id=lunch_item["id"],
@@ -100,8 +103,8 @@ def test_roadmap_generation_and_checkin_flow():
     assert checkin_res["status"] == "COMPLETED"
     assert checkin_res["actual_cost"] == 25000.0
 
-    # 4. Check-in on Wake item (on-time at 10:05, target 10:00 -> within 20m success)
-    wake_item = next(i for i in today_plan["items"] if "Bangun" in i["title"])
+    # 4. Check-in on Wake Measurement item (on-time at 10:05, target 10:00 -> within 20m success)
+    wake_item = next(i for i in today_plan["items"] if i["domain"] == "WAKE" and i["is_critical"])
     process_item_checkin(
         db=db,
         item_id=wake_item["id"],
@@ -155,7 +158,8 @@ async def test_api_roadmap_onboarding_and_checkin_integration():
         assert res_plan.status_code == 200
         plan_data = res_plan.json()
         assert plan_data["day_number"] == 1
-        assert len(plan_data["items"]) == 4
+        assert plan_data["target_wake_time"] == "09:00"  # Day 1 is Baseline Day!
+        assert len(plan_data["items"]) == 6
 
         first_item_id = plan_data["items"][0]["id"]
 
