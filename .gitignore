@@ -4,6 +4,13 @@
 .env.local
 .env.*.local
 
+# Prompt and task instruction documents (Local only)
+antigravity*.md
+revisi*.md
+perbaikan*.md
+prompt*.md
+*.prompt.md
+
 # Databases
 *.db
 *.sqlite
