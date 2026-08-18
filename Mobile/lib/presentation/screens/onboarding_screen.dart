@@ -52,6 +52,30 @@ class OnboardingScreen extends ConsumerWidget {
               ),
             ),
 
+            // Error Banner if any
+            if (state.errorMessage != null)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade900.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade400, width: 1),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        state.errorMessage!,
+                        style: AppTypography.caption.copyWith(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // Bottom Navigation Buttons
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -68,9 +92,11 @@ class OnboardingScreen extends ConsumerWidget {
                 children: [
                   if (state.currentStep > 0) ...[
                     OutlinedButton(
-                      onPressed: () {
-                        ref.read(onboardingProvider.notifier).previousStep();
-                      },
+                      onPressed: state.isLoading
+                          ? null
+                          : () {
+                              ref.read(onboardingProvider.notifier).previousStep();
+                            },
                       style: OutlinedButton.styleFrom(
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -157,18 +183,21 @@ class _Step1Baseline extends StatelessWidget {
         _InputField(
           label: 'Jam Tidur Saat Ini (HH:MM)',
           initialValue: state.bedtime,
+          hintText: 'Contoh: 02:00',
           onChanged: (v) => ref.read(onboardingProvider.notifier).updateBedtime(v),
         ),
         const SizedBox(height: 16),
         _InputField(
           label: 'Jam Bangun Saat Ini (HH:MM)',
           initialValue: state.wakeTime,
+          hintText: 'Contoh: 10:00',
           onChanged: (v) => ref.read(onboardingProvider.notifier).updateWakeTime(v),
         ),
         const SizedBox(height: 16),
         _InputField(
           label: 'Alokasi Budget Makan Mingguan (Rp)',
           initialValue: state.weeklyFoodBudget.toInt().toString(),
+          hintText: 'Contoh: 350000',
           keyboardType: TextInputType.number,
           onChanged: (v) {
             final val = double.tryParse(v) ?? 350000.0;
@@ -201,18 +230,21 @@ class _Step2Goal extends StatelessWidget {
         _InputField(
           label: 'Target Jam Bangun (HH:MM)',
           initialValue: state.targetWakeTime,
+          hintText: 'Contoh: 07:00',
           onChanged: (v) => ref.read(onboardingProvider.notifier).updateTargetWakeTime(v),
         ),
         const SizedBox(height: 16),
         _InputField(
           label: 'Target Jam Tidur (HH:MM)',
           initialValue: state.targetBedtime,
+          hintText: 'Contoh: 23:00',
           onChanged: (v) => ref.read(onboardingProvider.notifier).updateTargetBedtime(v),
         ),
         const SizedBox(height: 16),
         _InputField(
           label: 'Durasi Transisi yang Diminta (Hari)',
           initialValue: state.durationDays.toString(),
+          hintText: 'Contoh: 30',
           keyboardType: TextInputType.number,
           onChanged: (v) {
             final val = int.tryParse(v) ?? 30;
@@ -231,6 +263,22 @@ class _Step3Constraints extends StatelessWidget {
 
   const _Step3Constraints({required this.state, required this.ref, required this.isDark});
 
+  void _showAddConstraintModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => _AddConstraintBottomSheet(
+        onAdd: (newConstraint) {
+          ref.read(onboardingProvider.notifier).addConstraint(newConstraint);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -239,50 +287,242 @@ class _Step3Constraints extends StatelessWidget {
         const Text('Langkah 3: Batasan Jadwal Wajib', style: AppTypography.h2),
         const SizedBox(height: 6),
         const Text(
-          'Masukkan jam kuliah atau jam kerja agar to-do adaptif tidak pernah bertabrakan.',
+          'Masukkan jam kuliah atau jam kerja agar jadwal to-do adaptif tidak pernah bertabrakan.',
           style: AppTypography.body,
         ),
         const SizedBox(height: 20),
         if (state.constraints.isEmpty)
           Container(
+            width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: isDark ? AppColors.darkSurfaceSecondary : AppColors.lightSurfaceSecondary,
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                width: 1,
+              ),
             ),
-            child: const Text('Belum ada batasan jadwal yang ditambahkan.'),
+            child: const Text(
+              'Belum ada batasan jadwal wajib. Anda bisa menambahkan kuliah, kerja, atau aktivitas rutin lainnya.',
+              style: AppTypography.caption,
+            ),
           )
         else
           ...state.constraints.asMap().entries.map((entry) {
             final idx = entry.key;
             final c = entry.value;
             return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(
+                  color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                  width: 1,
+                ),
+              ),
               child: ListTile(
-                title: Text(c['title'] ?? ''),
-                subtitle: Text('${c['day_of_week']} • ${c['start_time']} - ${c['end_time']}'),
+                title: Text(c['title'] ?? '', style: AppTypography.bodyMedium),
+                subtitle: Text(
+                  '${_translateDay(c['day_of_week'])} • ${c['start_time']} - ${c['end_time']}',
+                  style: AppTypography.caption,
+                ),
                 trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
+                  icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
                   onPressed: () => ref.read(onboardingProvider.notifier).removeConstraint(idx),
                 ),
               ),
             );
           }),
         const SizedBox(height: 16),
-        OutlinedButton.icon(
-          onPressed: () {
-            ref.read(onboardingProvider.notifier).addConstraint({
-              'title': 'Jadwal Kuliah Pagi',
-              'category': 'UNIVERSITY',
-              'day_of_week': 'MONDAY',
-              'start_time': '08:00',
-              'end_time': '12:00',
-              'is_flexible': false,
-            });
-          },
-          icon: const Icon(Icons.add, size: 18),
-          label: const Text('Tambah Jadwal Kuliah/Kerja'),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => _showAddConstraintModal(context),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Tambah Jadwal Kegiatan Baru'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
         ),
       ],
+    );
+  }
+
+  String _translateDay(String? dow) {
+    switch (dow) {
+      case 'MONDAY':
+        return 'Senin';
+      case 'TUESDAY':
+        return 'Selasa';
+      case 'WEDNESDAY':
+        return 'Rabu';
+      case 'THURSDAY':
+        return 'Kamis';
+      case 'FRIDAY':
+        return 'Jumat';
+      case 'SATURDAY':
+        return 'Sabtu';
+      case 'SUNDAY':
+        return 'Minggu';
+      default:
+        return dow ?? '';
+    }
+  }
+}
+
+class _AddConstraintBottomSheet extends StatefulWidget {
+  final ValueChanged<Map<String, dynamic>> onAdd;
+
+  const _AddConstraintBottomSheet({required this.onAdd});
+
+  @override
+  State<_AddConstraintBottomSheet> createState() => _AddConstraintBottomSheetState();
+}
+
+class _AddConstraintBottomSheetState extends State<_AddConstraintBottomSheet> {
+  final _titleController = TextEditingController(text: 'Kuliah Pagi');
+  final _startTimeController = TextEditingController(text: '08:00');
+  final _endTimeController = TextEditingController(text: '12:00');
+  String _selectedDay = 'MONDAY';
+  String _selectedCategory = 'UNIVERSITY';
+
+  final List<Map<String, String>> _days = [
+    {'value': 'MONDAY', 'label': 'Senin'},
+    {'value': 'TUESDAY', 'label': 'Selasa'},
+    {'value': 'WEDNESDAY', 'label': 'Rabu'},
+    {'value': 'THURSDAY', 'label': 'Kamis'},
+    {'value': 'FRIDAY', 'label': 'Jumat'},
+    {'value': 'SATURDAY', 'label': 'Sabtu'},
+    {'value': 'SUNDAY', 'label': 'Minggu'},
+  ];
+
+  final List<Map<String, String>> _categories = [
+    {'value': 'UNIVERSITY', 'label': 'Kuliah / Akademik'},
+    {'value': 'WORK', 'label': 'Pekerjaan / Shift'},
+    {'value': 'COMMUTE', 'label': 'Perjalanan / Commute'},
+    {'value': 'PERSONAL', 'label': 'Aktivitas Pribadi'},
+  ];
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _startTimeController.dispose();
+    _endTimeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Tambah Batasan Jadwal Wajib', style: AppTypography.h2),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _titleController,
+            decoration: const InputDecoration(
+              labelText: 'Nama Kegiatan / Kuliah / Kerja',
+              hintText: 'Contoh: Kuliah Algoritma Pemrograman',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            value: _selectedCategory,
+            decoration: const InputDecoration(
+              labelText: 'Kategori',
+              border: OutlineInputBorder(),
+            ),
+            items: _categories
+                .map((c) => DropdownMenuItem(value: c['value'], child: Text(c['label']!)))
+                .toList(),
+            onChanged: (val) {
+              if (val != null) setState(() => _selectedCategory = val);
+            },
+          ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            value: _selectedDay,
+            decoration: const InputDecoration(
+              labelText: 'Hari Kegiatan',
+              border: OutlineInputBorder(),
+            ),
+            items: _days
+                .map((d) => DropdownMenuItem(value: d['value'], child: Text(d['label']!)))
+                .toList(),
+            onChanged: (val) {
+              if (val != null) setState(() => _selectedDay = val);
+            },
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _startTimeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Jam Mulai (HH:MM)',
+                    hintText: '08:00',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _endTimeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Jam Selesai (HH:MM)',
+                    hintText: '12:00',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                final title = _titleController.text.trim();
+                final start = _startTimeController.text.trim();
+                final end = _endTimeController.text.trim();
+
+                if (title.isNotEmpty && start.isNotEmpty && end.isNotEmpty) {
+                  widget.onAdd({
+                    'title': title,
+                    'category': _selectedCategory,
+                    'day_of_week': _selectedDay,
+                    'start_time': start,
+                    'end_time': end,
+                    'is_flexible': false,
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Simpan Jadwal Kegiatan'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -366,12 +606,14 @@ class _Step4Feasibility extends StatelessWidget {
 class _InputField extends StatelessWidget {
   final String label;
   final String initialValue;
+  final String? hintText;
   final ValueChanged<String> onChanged;
   final TextInputType keyboardType;
 
   const _InputField({
     required this.label,
     required this.initialValue,
+    this.hintText,
     required this.onChanged,
     this.keyboardType = TextInputType.text,
   });
@@ -388,6 +630,7 @@ class _InputField extends StatelessWidget {
           keyboardType: keyboardType,
           onChanged: onChanged,
           decoration: InputDecoration(
+            hintText: hintText,
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
