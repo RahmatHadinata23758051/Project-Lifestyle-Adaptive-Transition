@@ -35,6 +35,7 @@ from app.models.nutrition_adherence import (
     NutritionUnplannedIntake,
     NutritionActualItem,
 )
+from app.models.nutrition_adaptation import NutritionAdaptationEvaluationRecord
 
 __all__ = [
     "User",
@@ -70,4 +71,5 @@ __all__ = [
     "NutritionMealCheckin",
     "NutritionUnplannedIntake",
     "NutritionActualItem",
+    "NutritionAdaptationEvaluationRecord",
 ]
