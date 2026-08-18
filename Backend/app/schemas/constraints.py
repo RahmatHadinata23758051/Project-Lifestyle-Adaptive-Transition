@@ -1,6 +1,7 @@
 from enum import Enum
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from app.engine.time_utils import validate_time_string
 
 
 class ConstraintCategory(str, Enum):
@@ -28,9 +29,16 @@ class UserConstraint(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     category: ConstraintCategory
     day_of_week: DayOfWeek
-    start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$", description="Start time in HH:MM")
-    end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$", description="End time in HH:MM")
+    start_time: str
+    end_time: str
     is_flexible: bool = False
+
+    @field_validator("start_time", "end_time")
+    @classmethod
+    def check_valid_time(cls, v: str) -> str:
+        if not validate_time_string(v):
+            raise ValueError(f"Invalid time format '{v}'. Expected 24h format HH:MM (00:00 to 23:59).")
+        return v
 
 
 class FinancialProfile(BaseModel):
