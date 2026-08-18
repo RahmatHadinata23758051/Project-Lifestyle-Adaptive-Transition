@@ -21,6 +21,9 @@ Pusat pengetahuan (knowledge base), spesifikasi produk, cetak biru arsitektur, p
 | :--- | :--- | :--- |
 | **PRD (Product Requirements)** | [`PRD.md`](file:///c:/Users/user/Nata/Project/Adaptive%20Lifestyle%20Transition%20System/.agents/docs/prd/PRD.md) | Visi, filosofi Current Life First, domain lifestyle, ambang batas toleransi, dan notifikasi berinterval. |
 | **Ruang Lingkup MVP (Scope)** | [`PRODUCT_SCOPE.md`](file:///c:/Users/user/Nata/Project/Adaptive%20Lifestyle%20Transition%20System/.agents/docs/prd/PRODUCT_SCOPE.md) | Batasan modul in-scope, non-goals, dan User Acceptance Criteria (UAC). |
+| **Papan Kanban Sprint 1** | [`SPRINT_BOARD.md`](file:///c:/Users/user/Nata/Project/Adaptive%20Lifestyle%20Transition%20System/.agents/pm/SPRINT_BOARD.md) | Live Kanban board ala Trello/Jira pelacakan task aktif Sprint 1. |
+| **Master Backlog Epics** | [`BACKLOG.md`](file:///c:/Users/user/Nata/Project/Adaptive%20Lifestyle%20Transition%20System/.agents/pm/BACKLOG.md) | Master Product Backlog yang dipetakan ke Sprint 1 hingga Sprint 4. |
+| **Protokol Agile PM** | [`pm-agile-protocol.md`](file:///c:/Users/user/Nata/Project/Adaptive%20Lifestyle%20Transition%20System/.agents/rules/pm-agile-protocol.md) | Aturan alur 4-fase: PM Inisiasi -> Dev Write Code -> QC Audit -> PM Update Done. |
 | **Arsitektur Sistem** | [`ARCHITECTURE.md`](file:///c:/Users/user/Nata/Project/Adaptive%20Lifestyle%20Transition%20System/.agents/docs/architecture/ARCHITECTURE.md) | Diagram sistem, Data Model (ERD), State Machine, dan rekomendasi stack teknologi. |
 | **Spesifikasi Adaptive Engine** | [`ADAPTIVE_ENGINE_SPEC.md`](file:///c:/Users/user/Nata/Project/Adaptive%20Lifestyle%20Transition%20System/.agents/docs/architecture/ADAPTIVE_ENGINE_SPEC.md) | Rumus matematis step sizing, algoritma deviasi harian, re-balancing budget, dan collision resolver. |
 | **AI Agency Squad Manifest** | [`agency-squad-manifest.md`](file:///c:/Users/user/Nata/Project/Adaptive%20Lifestyle%20Transition%20System/.agents/rules/agency-squad-manifest.md) | Pemetaan peran squad (PM, Arsitek, Backend, Flutter, UI, QA, Security) dan alur Loop Engineering. |
@@ -43,7 +46,11 @@ Pusat pengetahuan (knowledge base), spesifikasi produk, cetak biru arsitektur, p
 │   └── architecture/
 │       ├── ARCHITECTURE.md         # Cetak biru arsitektur teknis & database schema
 │       └── ADAPTIVE_ENGINE_SPEC.md # Rumus matematis & algoritma Adaptive Engine
+├── pm/
+│   ├── SPRINT_BOARD.md             # Live Kanban Board Sprint 1 (Trello / Jira style)
+│   └── BACKLOG.md                  # Master Backlog Roadmap (Sprint 1 - 4)
 ├── rules/
+│   ├── pm-agile-protocol.md        # Protokol Operasional PM-Dev-QC-PM Loop
 │   ├── agency-squad-manifest.md    # Pemetaan peran AI Agency Squad & Loop Engineering
 │   ├── git-worktrees.md            # Strategi workspace isolasi Git Worktrees
 │   ├── anti-ai-slop.md             # Kebijakan Zero-AI-Slop & standar visual/rekayasa
