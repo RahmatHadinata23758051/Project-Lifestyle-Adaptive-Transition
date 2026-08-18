@@ -49,6 +49,8 @@ class FoodCandidatePreviewInput(BaseModel):
     target_kcal: float = Field(..., gt=0)
     min_kcal: Optional[float] = None
     max_kcal: Optional[float] = None
+    nutrition_eligible: bool = True
+    nutrition_eligibility_status: str = "ELIGIBLE"
     user_allergies: List[str] = []
     user_restrictions: List[str] = []
     cooking_capability: Optional[str] = None
@@ -60,8 +62,12 @@ class FoodCandidateGenerationResponse(BaseModel):
     status: CandidateGenerationStatus
     candidate_count: int
     candidates: List[FoodCandidateSetResponse]
+    evaluated_candidate_count: int = 0
+    eligible_candidate_count: int = 0
+    returned_candidate_count: int = 0
     rejected_counts_by_reason: Dict[str, int] = {}
     search_truncated: bool = False
     policy_version: str = CandidatePolicy.VERSION
+    ranking_policy_version: str = CandidatePolicy.RANKING_POLICY_VERSION
 
     model_config = ConfigDict(from_attributes=True)

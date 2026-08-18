@@ -11,6 +11,8 @@ from app.food_knowledge.constants import (
     AliasType,
     ServingSourceType,
     ServingConfidence,
+    ServingDivisibility,
+    HalalStatus,
     AllergenType,
     AllergenRelationshipType,
     PrepComplexity,
@@ -67,6 +69,8 @@ class FoodServingDTO:
     confidence: ServingConfidence = ServingConfidence.HIGH
     region: Optional[str] = None
     notes: Optional[str] = None
+    divisibility: ServingDivisibility = ServingDivisibility.CONTINUOUS
+    is_discrete: bool = False
 
 
 @dataclass
@@ -102,4 +106,5 @@ class FoodKnowledgeItemDTO:
     allergens: List[FoodAllergenDTO]
     preparation_requirements: Optional[PreparationRequirementsDTO]
     data_quality_status: DataQualityStatus
+    halal_status: HalalStatus = HalalStatus.UNKNOWN
     is_active: bool = True

@@ -9,22 +9,31 @@ from app.food_candidates.scoring import build_candidate_set
 def generate_bounded_combinations(
     slot: MealSlotDTO,
     items_by_role: Dict[FoodPlannerRole, List[FoodCandidateItemDTO]],
-) -> Tuple[List[FoodCandidateSetDTO], bool]:
+) -> Tuple[List[FoodCandidateSetDTO], bool, int, int]:
     """
     Generates deterministic bounded food combinations for a meal slot.
     - MAIN_MEAL: Staple + Protein (+ optional Vegetable/Fruit)
     - SNACK: 1 or 2 Snack items / Fruits
-    Early pruning stops search when cumulative calories exceed slot.max_kcal.
+    Early pruning stops search when cumulative calories exceed near-match upper bound.
+    Returns (candidates, search_truncated, evaluated_count, eligible_count).
     """
     candidates: List[FoodCandidateSetDTO] = []
     seen_sigs = set()
     search_truncated = False
+    evaluated_count = 0
+    eligible_count = 0
 
-    staples = items_by_role.get(FoodPlannerRole.STAPLE, [])[:CandidatePolicy.MAX_POOL_PER_ROLE]
-    proteins = items_by_role.get(FoodPlannerRole.PROTEIN_SOURCE, [])[:CandidatePolicy.MAX_POOL_PER_ROLE]
-    vegetables = items_by_role.get(FoodPlannerRole.VEGETABLE, [])[:CandidatePolicy.MAX_POOL_PER_ROLE]
-    fruits = items_by_role.get(FoodPlannerRole.FRUIT, [])[:CandidatePolicy.MAX_POOL_PER_ROLE]
-    snacks = items_by_role.get(FoodPlannerRole.SNACK_ITEM, [])[:CandidatePolicy.MAX_POOL_PER_ROLE]
+    max_energy_cutoff = (slot.max_kcal + (slot.target_kcal * CandidatePolicy.NEAR_MATCH_EXTENSION_RATIO)) * 1.1
+
+    # Deterministic sorting of pool items prior to truncation
+    def item_sort_key(i: FoodCandidateItemDTO):
+        return (i.canonical_name, i.food_item_id, i.grams)
+
+    staples = sorted(items_by_role.get(FoodPlannerRole.STAPLE, []), key=item_sort_key)[:CandidatePolicy.MAX_POOL_PER_ROLE]
+    proteins = sorted(items_by_role.get(FoodPlannerRole.PROTEIN_SOURCE, []), key=item_sort_key)[:CandidatePolicy.MAX_POOL_PER_ROLE]
+    vegetables = sorted(items_by_role.get(FoodPlannerRole.VEGETABLE, []), key=item_sort_key)[:CandidatePolicy.MAX_POOL_PER_ROLE]
+    fruits = sorted(items_by_role.get(FoodPlannerRole.FRUIT, []), key=item_sort_key)[:CandidatePolicy.MAX_POOL_PER_ROLE]
+    snacks = sorted(items_by_role.get(FoodPlannerRole.SNACK_ITEM, []), key=item_sort_key)[:CandidatePolicy.MAX_POOL_PER_ROLE]
 
     if slot.slot_type == MealSlotType.MAIN_MEAL:
         # 1. Staple + Protein (2 items)
@@ -32,9 +41,10 @@ def generate_bounded_combinations(
             for pr in proteins:
                 if st.food_item_id == pr.food_item_id:
                     continue
+                evaluated_count += 1
                 pair = [st, pr]
                 tot_e = sum(i.energy_kcal for i in pair)
-                if tot_e > slot.max_kcal * 1.25:
+                if tot_e > max_energy_cutoff:
                     continue  # Early prune
 
                 sig = "-".join(sorted(f"{i.food_item_id}:{i.grams:.0f}" for i in pair))
@@ -42,15 +52,17 @@ def generate_bounded_combinations(
                     seen_sigs.add(sig)
                     c_set = build_candidate_set(slot, pair)
                     if c_set.match_status != c_set.match_status.INELIGIBLE:
+                        eligible_count += 1
                         candidates.append(c_set)
 
                 # 2. Staple + Protein + Vegetable/Fruit (3 items)
                 for side in (vegetables + fruits)[:5]:
                     if side.food_item_id in (st.food_item_id, pr.food_item_id):
                         continue
+                    evaluated_count += 1
                     trio = [st, pr, side]
                     tot_e3 = sum(i.energy_kcal for i in trio)
-                    if tot_e3 > slot.max_kcal * 1.25:
+                    if tot_e3 > max_energy_cutoff:
                         continue
 
                     sig3 = "-".join(sorted(f"{i.food_item_id}:{i.grams:.0f}" for i in trio))
@@ -58,6 +70,7 @@ def generate_bounded_combinations(
                         seen_sigs.add(sig3)
                         c_set3 = build_candidate_set(slot, trio)
                         if c_set3.match_status != c_set3.match_status.INELIGIBLE:
+                            eligible_count += 1
                             candidates.append(c_set3)
 
                 if len(candidates) >= CandidatePolicy.MAX_CANDIDATES_RETURNED * 3:
@@ -68,12 +81,14 @@ def generate_bounded_combinations(
 
     else:
         # SNACK SLOT: 1 item or 2 items
-        snack_pool = (snacks + fruits + staples)[:CandidatePolicy.MAX_POOL_PER_ROLE]
+        snack_pool = sorted((snacks + fruits + staples), key=item_sort_key)[:CandidatePolicy.MAX_POOL_PER_ROLE]
 
         # 1-item snack
         for sn in snack_pool:
+            evaluated_count += 1
             c_set = build_candidate_set(slot, [sn])
             if c_set.match_status != c_set.match_status.INELIGIBLE:
+                eligible_count += 1
                 candidates.append(c_set)
 
         # 2-item snack
@@ -83,9 +98,10 @@ def generate_bounded_combinations(
                 s2 = snack_pool[j]
                 if s1.food_item_id == s2.food_item_id:
                     continue
+                evaluated_count += 1
                 pair = [s1, s2]
                 tot_e = sum(x.energy_kcal for x in pair)
-                if tot_e > slot.max_kcal * 1.25:
+                if tot_e > max_energy_cutoff:
                     continue
 
                 sig = "-".join(sorted(f"{x.food_item_id}:{x.grams:.0f}" for x in pair))
@@ -93,10 +109,11 @@ def generate_bounded_combinations(
                     seen_sigs.add(sig)
                     c_set = build_candidate_set(slot, pair)
                     if c_set.match_status != c_set.match_status.INELIGIBLE:
+                        eligible_count += 1
                         candidates.append(c_set)
 
                 if len(candidates) >= CandidatePolicy.MAX_CANDIDATES_RETURNED * 2:
                     search_truncated = True
                     break
 
-    return candidates, search_truncated
+    return candidates, search_truncated, evaluated_count, eligible_count

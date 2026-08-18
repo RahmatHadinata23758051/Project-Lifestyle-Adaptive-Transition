@@ -1,9 +1,11 @@
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional
 from app.food_knowledge.constants import (
     DataQualityStatus,
     NutrientCompleteness,
     AllergenType,
     PreparationState,
+    HalalStatus,
+    KitchenEquipment,
 )
 from app.food_knowledge.models import FoodKnowledgeItemDTO
 from app.food_knowledge.allergens import check_allergen_conflict
@@ -14,15 +16,15 @@ def is_food_eligible_for_candidate_pool(
     food: FoodKnowledgeItemDTO,
     user_allergies: List[str],
     user_restrictions: List[str],
-    cooking_capability: str = "CAN_COOK",
+    cooking_capability: Optional[str] = "CAN_COOK",
     user_equipment: Optional[List[str]] = None,
 ) -> Tuple[bool, Optional[CandidateRejectionReason], str]:
     """
-    Pure deterministic eligibility filter pipeline (P1.2):
+    Pure deterministic eligibility filter pipeline (P1.2 Hardened):
     1. Quality & Completeness Filter
     2. Allergen Hard-Block Filter (Unknown != Safe)
-    3. Dietary Restriction Filter
-    4. Cooking Capability & Equipment Compatibility Filter
+    3. Dietary & Halal Restriction Filter (Structured Halal Only, Zero-Inference)
+    4. Cooking Capability & Equipment Compatibility Filter (Unknown Equipment != Available)
     """
     # 1. Quality & Completeness
     if not food.is_active:
@@ -52,11 +54,24 @@ def is_food_eligible_for_candidate_pool(
             reason_code = CandidateRejectionReason.ALLERGEN_UNKNOWN if is_unknown else CandidateRejectionReason.ALLERGEN_CONFLICT
             return False, reason_code, f"Konflik alergen: {', '.join(reasons)}"
 
-    # 3. Dietary Restrictions
+    # 3. Dietary & Halal Restrictions
     restrictions_upper = [r.upper() for r in user_restrictions]
     canonical_lower = food.canonical_name.lower()
-    
-    if "NO_PORK" in restrictions_upper or "HALAL" in restrictions_upper:
+
+    if "HALAL_REQUIRED" in restrictions_upper or "HALAL" in restrictions_upper:
+        # P0.1: Must never infer halal from category/name/no-pork. Use structured status only.
+        halal_st = getattr(food, "halal_status", HalalStatus.UNKNOWN)
+        if halal_st == HalalStatus.NOT_HALAL:
+            return False, CandidateRejectionReason.HALAL_RESTRICTION_CONFLICT, "Makanan berstatus tidak halal."
+        elif halal_st == HalalStatus.VERIFIED_HALAL:
+            pass  # Verified halal
+        elif halal_st == HalalStatus.NOT_APPLICABLE:
+            pass  # Non-food items or natural water
+        else:
+            # UNKNOWN halal status is rejected conservatively (Unknown != Safe)
+            return False, CandidateRejectionReason.HALAL_STATUS_UNVERIFIED, "Status kehalalan bahan belum terverifikasi secara terstruktur."
+
+    if "NO_PORK" in restrictions_upper:
         if "babi" in canonical_lower or "pork" in canonical_lower or "lard" in canonical_lower:
             return False, CandidateRejectionReason.RESTRICTION_CONFLICT, "Mengandung unsur babi yang dibatasi pengguna."
 
@@ -64,19 +79,24 @@ def is_food_eligible_for_candidate_pool(
         if food.food_category in ("MEAT", "POULTRY", "FISH_SEAFOOD"):
             return False, CandidateRejectionReason.RESTRICTION_CONFLICT, "Bahan hewani bertentangan dengan preferensi vegetarian."
 
-    # 4. Cooking Capability & Equipment
-    capability_upper = (cooking_capability or "CAN_COOK").upper()
+    # 4. Cooking Capability & Equipment (H2)
+    capability_upper = (cooking_capability or "UNKNOWN").upper()
     prep_req = food.preparation_requirements
 
-    if capability_upper == "BUY_ONLY":
+    if capability_upper in ("BUY_ONLY", "UNKNOWN"):
         if prep_req and prep_req.requires_cooking:
             if food.preparation_state not in (PreparationState.READY_TO_EAT, PreparationState.COOKED, PreparationState.FRIED, PreparationState.BOILED):
-                return False, CandidateRejectionReason.PREPARATION_INCOMPATIBLE, "Makanan memerlukan proses memasak sedangkan profil pengguna BUY_ONLY."
+                return False, CandidateRejectionReason.PREPARATION_INCOMPATIBLE, "Makanan memerlukan proses memasak sedangkan kemampuan masak belum terverifikasi/BUY_ONLY."
 
-    if user_equipment is not None and prep_req and prep_req.required_equipment:
-        user_eq_set = {eq.upper() for eq in user_equipment}
-        for req_eq in prep_req.required_equipment:
-            if req_eq.value.upper() not in user_eq_set and req_eq.value.upper() != "NONE":
-                return False, CandidateRejectionReason.PREPARATION_INCOMPATIBLE, f"Memerlukan alat '{req_eq.value}' yang tidak dimiliki pengguna."
+    if prep_req and prep_req.required_equipment:
+        non_none_reqs = [eq for eq in prep_req.required_equipment if eq != KitchenEquipment.NONE]
+        if non_none_reqs:
+            if user_equipment is None:
+                # Unknown equipment != Available
+                return False, CandidateRejectionReason.EQUIPMENT_UNKNOWN, "Data peralatan dapur pengguna belum diketahui untuk bahan yang memerlukan peralatan."
+            user_eq_set = {eq.upper() for eq in user_equipment}
+            for req_eq in non_none_reqs:
+                if req_eq.value.upper() not in user_eq_set:
+                    return False, CandidateRejectionReason.PREPARATION_INCOMPATIBLE, f"Memerlukan alat '{req_eq.value}' yang tidak dimiliki pengguna."
 
     return True, None, "Layak digunakan."

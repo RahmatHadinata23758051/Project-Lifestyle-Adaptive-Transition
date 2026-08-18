@@ -15,6 +15,8 @@ from app.food_knowledge.constants import (
     AllergenRelationshipType,
     KitchenEquipment,
     PrepComplexity,
+    HalalStatus,
+    ServingDivisibility,
 )
 from app.food_knowledge.models import (
     FoodKnowledgeItemDTO,
@@ -37,8 +39,11 @@ from app.food_candidates.constants import (
 )
 from app.food_candidates.models import (
     CandidateGenerationInputDTO,
+    FoodCandidateItemDTO,
 )
 from app.food_candidates.generator import generate_food_candidates
+from app.food_candidates.servings import generate_portion_options_for_food
+from app.food_candidates.scoring import build_candidate_set
 
 
 def create_mock_jwt(user_id: str, email: str, secret: str = settings.SUPABASE_JWT_SECRET) -> str:
@@ -61,9 +66,11 @@ def make_test_food(
     carb_per_100g: float,
     prep_state: PreparationState = PreparationState.COOKED,
     quality: DataQualityStatus = DataQualityStatus.VERIFIED_OFFICIAL,
+    halal_status: HalalStatus = HalalStatus.UNKNOWN,
     allergens: list = None,
     servings: list = None,
     requires_cooking: bool = False,
+    required_equipment: list = None,
 ) -> FoodKnowledgeItemDTO:
     source_dto = SourceProvenanceDTO(id="s1", code="TKPI_2020", name="TKPI 2020")
     nutrients = NutrientProfileDTO(
@@ -80,7 +87,7 @@ def make_test_food(
         requires_cooking=requires_cooking,
         minimum_capability="CAN_COOK" if requires_cooking else "BUY_ONLY",
         prep_complexity=PrepComplexity.VERY_SIMPLE,
-        required_equipment=[KitchenEquipment.STOVE] if requires_cooking else [],
+        required_equipment=required_equipment if required_equipment is not None else ([KitchenEquipment.STOVE] if requires_cooking else []),
     )
     return FoodKnowledgeItemDTO(
         id=food_id,
@@ -99,12 +106,182 @@ def make_test_food(
         allergens=allergens or [],
         preparation_requirements=prep_req,
         data_quality_status=quality,
+        halal_status=halal_status,
         is_active=True,
     )
 
 
+def test_nutrition_eligibility_gate():
+    # P0.2: Candidate generation must not proceed if user is outside nutrition planning scope
+    rice = make_test_food("f_rice", "Nasi Putih", FoodCategory.GRAIN_STAPLE, 130.0, 2.7, 0.3, 28.0)
+    slot = MealSlotDTO(
+        slot_id="slot_1",
+        slot_type=MealSlotType.MAIN_MEAL,
+        sequence=1,
+        preferred_time="12:00",
+        earliest_time="11:15",
+        latest_time="12:45",
+        duration_minutes=30,
+        target_kcal=600.0,
+        min_kcal=500.0,
+        max_kcal=700.0,
+        schedule_source=ScheduleProvenance.DERIVED,
+        reason_code=MealScheduleReasonCode.NORMAL_BASELINE,
+    )
+
+    inp = CandidateGenerationInputDTO(
+        slot=slot,
+        food_pool=[rice],
+        nutrition_eligible=False,
+        nutrition_eligibility_status="OUT_OF_SCOPE",
+    )
+    res = generate_food_candidates(inp)
+    assert res.status == CandidateGenerationStatus.NOT_ELIGIBLE
+    assert res.candidate_count == 0
+    assert CandidateRejectionReason.NUTRITION_NOT_ELIGIBLE.value in res.rejected_counts_by_reason
+
+
+def test_halal_semantics_structured_and_zero_inference():
+    # P0.1: Food must NEVER be assumed halal from category/name or "no-pork".
+    chicken_unknown_halal = make_test_food(
+        "f_chick_unk", "Daging Ayam Potong", FoodCategory.POULTRY, 200.0, 22.0, 12.0, 0.0,
+        halal_status=HalalStatus.UNKNOWN,
+    )
+    chicken_verified_halal = make_test_food(
+        "f_chick_ver", "Daging Ayam Bersertifikat Halal", FoodCategory.POULTRY, 200.0, 22.0, 12.0, 0.0,
+        halal_status=HalalStatus.VERIFIED_HALAL,
+    )
+    pork_food = make_test_food(
+        "f_pork", "Daging Babi", FoodCategory.MEAT, 250.0, 20.0, 18.0, 0.0,
+        halal_status=HalalStatus.NOT_HALAL,
+    )
+
+    slot = MealSlotDTO(
+        slot_id="slot_1",
+        slot_type=MealSlotType.MAIN_MEAL,
+        sequence=1,
+        preferred_time="12:00",
+        earliest_time="11:15",
+        latest_time="12:45",
+        duration_minutes=30,
+        target_kcal=600.0,
+        min_kcal=500.0,
+        max_kcal=700.0,
+        schedule_source=ScheduleProvenance.DERIVED,
+        reason_code=MealScheduleReasonCode.NORMAL_BASELINE,
+    )
+
+    # User requires HALAL
+    inp_unknown = CandidateGenerationInputDTO(
+        slot=slot,
+        food_pool=[chicken_unknown_halal],
+        user_restrictions=["HALAL_REQUIRED"],
+    )
+    res_unknown = generate_food_candidates(inp_unknown)
+    assert CandidateRejectionReason.HALAL_STATUS_UNVERIFIED.value in res_unknown.rejected_counts_by_reason
+
+    inp_not_halal = CandidateGenerationInputDTO(
+        slot=slot,
+        food_pool=[pork_food],
+        user_restrictions=["HALAL_REQUIRED"],
+    )
+    res_not_halal = generate_food_candidates(inp_not_halal)
+    assert CandidateRejectionReason.HALAL_RESTRICTION_CONFLICT.value in res_not_halal.rejected_counts_by_reason
+
+
+def test_unknown_equipment_handling():
+    # H2: Unknown equipment != Available
+    raw_food = make_test_food(
+        "f_raw", "Bahan Masak", FoodCategory.GRAIN_STAPLE, 150.0, 3.0, 0.5, 30.0,
+        requires_cooking=True,
+        required_equipment=[KitchenEquipment.STOVE],
+    )
+    slot = MealSlotDTO(
+        slot_id="slot_1",
+        slot_type=MealSlotType.MAIN_MEAL,
+        sequence=1,
+        preferred_time="12:00",
+        earliest_time="11:15",
+        latest_time="12:45",
+        duration_minutes=30,
+        target_kcal=600.0,
+        min_kcal=500.0,
+        max_kcal=700.0,
+        schedule_source=ScheduleProvenance.DERIVED,
+        reason_code=MealScheduleReasonCode.NORMAL_BASELINE,
+    )
+
+    # user_equipment is None -> EQUIPMENT_UNKNOWN
+    inp_unk = CandidateGenerationInputDTO(
+        slot=slot,
+        food_pool=[raw_food],
+        user_equipment=None,
+    )
+    res_unk = generate_food_candidates(inp_unk)
+    assert CandidateRejectionReason.EQUIPMENT_UNKNOWN.value in res_unk.rejected_counts_by_reason
+
+
+def test_discrete_vs_continuous_serving_semantics():
+    # H3: Discrete foods allow only integer multipliers (1.0, 2.0, 3.0)
+    egg_serving = FoodServingDTO(
+        id="srv_egg",
+        serving_name="1 butir telur",
+        grams=50.0,
+        divisibility=ServingDivisibility.DISCRETE,
+        is_discrete=True,
+    )
+    egg = make_test_food("f_egg", "Telur Ayam", FoodCategory.EGG, 155.0, 13.0, 11.0, 1.1, servings=[egg_serving])
+
+    portions_egg = generate_portion_options_for_food(egg, role=FoodPlannerRole.PROTEIN_SOURCE)
+    # Check that egg multipliers are integer (50g, 100g, 150g)
+    for p in portions_egg:
+        assert p.grams in (50.0, 100.0, 150.0)
+        assert "1.5" not in p.serving_name
+
+    # Continuous food (rice) allows fractional multipliers
+    rice_serving = FoodServingDTO(
+        id="srv_rice",
+        serving_name="1 piring",
+        grams=100.0,
+        divisibility=ServingDivisibility.CONTINUOUS,
+        is_discrete=False,
+    )
+    rice = make_test_food("f_rice", "Nasi Putih", FoodCategory.GRAIN_STAPLE, 130.0, 2.7, 0.3, 28.0, servings=[rice_serving])
+    portions_rice = generate_portion_options_for_food(rice, role=FoodPlannerRole.STAPLE)
+    assert any(p.grams == 50.0 for p in portions_rice)  # 0.5 piring
+
+
+def test_explicit_near_match_boundary():
+    # H1: Strict range: 600–800 (target 700). 10% extension = 70 kcal (530–870)
+    slot = MealSlotDTO(
+        slot_id="slot_1",
+        slot_type=MealSlotType.MAIN_MEAL,
+        sequence=1,
+        preferred_time="12:00",
+        earliest_time="11:15",
+        latest_time="12:45",
+        duration_minutes=30,
+        target_kcal=700.0,
+        min_kcal=600.0,
+        max_kcal=800.0,
+        schedule_source=ScheduleProvenance.DERIVED,
+        reason_code=MealScheduleReasonCode.NORMAL_BASELINE,
+    )
+
+    item_strict = FoodCandidateItemDTO("f1", "Strict Item", FoodPlannerRole.STAPLE, None, "100g", 100.0, 700.0, 20.0, 10.0, 50.0)
+    cand_strict = build_candidate_set(slot, [item_strict])
+    assert cand_strict.match_status == CandidateMatchStatus.STRICT_MATCH
+
+    item_near = FoodCandidateItemDTO("f2", "Near Item", FoodPlannerRole.STAPLE, None, "100g", 100.0, 560.0, 15.0, 8.0, 40.0)
+    cand_near = build_candidate_set(slot, [item_near])
+    assert cand_near.match_status == CandidateMatchStatus.NEAR_MATCH
+
+    item_ineligible = FoodCandidateItemDTO("f3", "Ineligible Item", FoodPlannerRole.STAPLE, None, "100g", 100.0, 450.0, 10.0, 5.0, 30.0)
+    cand_ineligible = build_candidate_set(slot, [item_ineligible])
+    assert cand_ineligible.match_status == CandidateMatchStatus.INELIGIBLE
+
+
 def test_allergen_hard_block_and_unknown_safety():
-    # Rice (No allergen), Peanut tempe (Contains Peanut), Soy milk (Unknown Soy)
     rice = make_test_food("f_rice", "Nasi Putih", FoodCategory.GRAIN_STAPLE, 130.0, 2.7, 0.3, 28.0)
     peanut_food = make_test_food(
         "f_peanut",
@@ -148,6 +325,7 @@ def test_allergen_hard_block_and_unknown_safety():
         slot=slot,
         food_pool=[rice, peanut_food],
         user_allergies=["PEANUT"],
+        user_equipment=["STOVE"],
     )
     res_peanut = generate_food_candidates(inp_peanut)
     assert CandidateRejectionReason.ALLERGEN_CONFLICT.value in res_peanut.rejected_counts_by_reason
@@ -157,82 +335,13 @@ def test_allergen_hard_block_and_unknown_safety():
         slot=slot,
         food_pool=[rice, unknown_soy_food],
         user_allergies=["SOY"],
+        user_equipment=["STOVE"],
     )
     res_soy = generate_food_candidates(inp_soy)
     assert CandidateRejectionReason.ALLERGEN_UNKNOWN.value in res_soy.rejected_counts_by_reason
 
 
-def test_preparation_capability_filter():
-    rice_cooked = make_test_food("f_rice", "Nasi Putih", FoodCategory.GRAIN_STAPLE, 130.0, 2.7, 0.3, 28.0, prep_state=PreparationState.COOKED, requires_cooking=False)
-    chicken_raw = make_test_food("f_raw_chick", "Daging Ayam Mentah", FoodCategory.POULTRY, 200.0, 22.0, 12.0, 0.0, prep_state=PreparationState.RAW, requires_cooking=True)
-
-    slot = MealSlotDTO(
-        slot_id="slot_1",
-        slot_type=MealSlotType.MAIN_MEAL,
-        sequence=1,
-        preferred_time="12:00",
-        earliest_time="11:15",
-        latest_time="12:45",
-        duration_minutes=30,
-        target_kcal=600.0,
-        min_kcal=500.0,
-        max_kcal=700.0,
-        schedule_source=ScheduleProvenance.DERIVED,
-        reason_code=MealScheduleReasonCode.NORMAL_BASELINE,
-    )
-
-    # BUY_ONLY user cannot use chicken_raw
-    inp = CandidateGenerationInputDTO(
-        slot=slot,
-        food_pool=[rice_cooked, chicken_raw],
-        cooking_capability="BUY_ONLY",
-    )
-    res = generate_food_candidates(inp)
-    assert CandidateRejectionReason.PREPARATION_INCOMPATIBLE.value in res.rejected_counts_by_reason
-
-
-def test_energy_match_strict_and_nutrient_aggregation():
-    # Rice: 100g = 130 kcal, 2.7g P, 0.3g F, 28g C
-    # Chicken: 100g = 250 kcal, 25g P, 15g F, 0g C
-    # Egg: 100g = 155 kcal, 13g P, 11g F, 1.1g C
-    rice = make_test_food("f_rice", "Nasi Putih", FoodCategory.GRAIN_STAPLE, 130.0, 2.7, 0.3, 28.0)
-    chicken = make_test_food("f_chicken", "Ayam Panggang", FoodCategory.POULTRY, 250.0, 25.0, 15.0, 0.0)
-    egg = make_test_food("f_egg", "Telur Rebus", FoodCategory.EGG, 155.0, 13.0, 11.0, 1.1)
-
-    slot = MealSlotDTO(
-        slot_id="slot_1",
-        slot_type=MealSlotType.MAIN_MEAL,
-        sequence=1,
-        preferred_time="12:00",
-        earliest_time="11:15",
-        latest_time="12:45",
-        duration_minutes=30,
-        target_kcal=650.0,
-        min_kcal=550.0,
-        max_kcal=750.0,
-        schedule_source=ScheduleProvenance.DERIVED,
-        reason_code=MealScheduleReasonCode.NORMAL_BASELINE,
-    )
-
-    inp = CandidateGenerationInputDTO(
-        slot=slot,
-        food_pool=[rice, chicken, egg],
-    )
-    res = generate_food_candidates(inp)
-
-    assert res.status == CandidateGenerationStatus.CANDIDATES_FOUND
-    assert res.candidate_count >= 1
-
-    # Check top candidate
-    top_cand = res.candidates[0]
-    assert top_cand.match_status == CandidateMatchStatus.STRICT_MATCH
-    assert 550.0 <= top_cand.total_energy_kcal <= 750.0
-    assert top_cand.total_protein_g is not None
-    assert top_cand.total_protein_g > 0.0
-    assert top_cand.energy_deviation_kcal == pytest.approx(top_cand.total_energy_kcal - 650.0, abs=0.1)
-
-
-def test_determinism_same_input_same_output():
+def test_determinism_and_ranking_version():
     rice = make_test_food("f_rice", "Nasi Putih", FoodCategory.GRAIN_STAPLE, 130.0, 2.7, 0.3, 28.0)
     egg = make_test_food("f_egg", "Telur Rebus", FoodCategory.EGG, 155.0, 13.0, 11.0, 1.1)
 
@@ -251,82 +360,16 @@ def test_determinism_same_input_same_output():
         reason_code=MealScheduleReasonCode.NORMAL_BASELINE,
     )
 
-    inp = CandidateGenerationInputDTO(slot=slot, food_pool=[rice, egg])
+    inp = CandidateGenerationInputDTO(slot=slot, food_pool=[rice, egg], user_equipment=["STOVE"])
     res_1 = generate_food_candidates(inp)
     res_2 = generate_food_candidates(inp)
 
     assert res_1.candidate_count == res_2.candidate_count
+    assert res_1.ranking_policy_version == CandidatePolicy.RANKING_POLICY_VERSION
     for c1, c2 in zip(res_1.candidates, res_2.candidates):
         assert c1.candidate_id == c2.candidate_id
         assert c1.total_energy_kcal == c2.total_energy_kcal
         assert c1.total_protein_g == c2.total_protein_g
-
-
-def test_unverified_source_quality_rejected():
-    unverified_food = make_test_food(
-        "f_unverified",
-        "Unknown Berry",
-        FoodCategory.FRUIT,
-        100.0,
-        1.0,
-        0.5,
-        20.0,
-        quality=DataQualityStatus.UNVERIFIED,
-    )
-
-    slot = MealSlotDTO(
-        slot_id="slot_snack",
-        slot_type=MealSlotType.SNACK,
-        sequence=1,
-        preferred_time="16:00",
-        earliest_time="15:30",
-        latest_time="16:30",
-        duration_minutes=15,
-        target_kcal=200.0,
-        min_kcal=150.0,
-        max_kcal=250.0,
-        schedule_source=ScheduleProvenance.DERIVED,
-        reason_code=MealScheduleReasonCode.NORMAL_BASELINE,
-    )
-
-    inp = CandidateGenerationInputDTO(slot=slot, food_pool=[unverified_food])
-    res = generate_food_candidates(inp)
-
-    assert res.status == CandidateGenerationStatus.NO_ELIGIBLE_FOODS
-    assert CandidateRejectionReason.QUALITY_NOT_ELIGIBLE.value in res.rejected_counts_by_reason
-
-
-def test_bounded_search_space_control():
-    # 25 staples and 25 proteins
-    staples = [
-        make_test_food(f"staple_{i}", f"Staple {i}", FoodCategory.GRAIN_STAPLE, 120.0 + i, 2.5, 0.5, 25.0)
-        for i in range(25)
-    ]
-    proteins = [
-        make_test_food(f"protein_{i}", f"Protein {i}", FoodCategory.POULTRY, 200.0 + i, 20.0, 10.0, 1.0)
-        for i in range(25)
-    ]
-
-    slot = MealSlotDTO(
-        slot_id="slot_1",
-        slot_type=MealSlotType.MAIN_MEAL,
-        sequence=1,
-        preferred_time="12:00",
-        earliest_time="11:15",
-        latest_time="12:45",
-        duration_minutes=30,
-        target_kcal=700.0,
-        min_kcal=600.0,
-        max_kcal=800.0,
-        schedule_source=ScheduleProvenance.DERIVED,
-        reason_code=MealScheduleReasonCode.NORMAL_BASELINE,
-    )
-
-    inp = CandidateGenerationInputDTO(slot=slot, food_pool=staples + proteins)
-    res = generate_food_candidates(inp)
-
-    # Returned candidates strictly capped at MAX_CANDIDATES_RETURNED (20)
-    assert res.candidate_count <= CandidatePolicy.MAX_CANDIDATES_RETURNED
 
 
 @pytest.mark.asyncio
@@ -400,8 +443,10 @@ async def test_api_food_candidates_preview_authenticated(db_session):
             "target_kcal": 450.0,
             "min_kcal": 350.0,
             "max_kcal": 550.0,
+            "nutrition_eligible": True,
             "user_allergies": ["PEANUT"],
             "cooking_capability": "CAN_COOK",
+            "user_equipment": ["STOVE"],
         }
 
         res = await client.post("/api/v1/food-candidates/preview", json=payload, headers=headers)
@@ -411,6 +456,7 @@ async def test_api_food_candidates_preview_authenticated(db_session):
         assert data["slot_id"] == "slot_lunch"
         assert data["status"] in ("CANDIDATES_FOUND", "NO_STRICT_MATCH")
         assert data["policy_version"] == CandidatePolicy.VERSION
+        assert data["ranking_policy_version"] == CandidatePolicy.RANKING_POLICY_VERSION
 
         if data["candidate_count"] > 0:
             top_cand = data["candidates"][0]

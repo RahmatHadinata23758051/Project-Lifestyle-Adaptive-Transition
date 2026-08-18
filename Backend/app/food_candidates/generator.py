@@ -24,12 +24,29 @@ def generate_food_candidates(
     input_dto: CandidateGenerationInputDTO,
 ) -> FoodCandidateGenerationResultDTO:
     """
-    Pure zero-I/O Food Candidate Engine (P1.2).
+    Pure zero-I/O Food Candidate Engine (P1.2 Hardened).
     Generates deterministic, safe food combinations to fill a meal slot target.
+    Enforces nutrition eligibility gate, structured safety, and deterministic ranking.
     """
     slot = input_dto.slot
 
-    # 1. Input Validation
+    # 1. P0.2 — Nutrition Eligibility Gate
+    if not input_dto.nutrition_eligible or input_dto.nutrition_eligibility_status in ("OUT_OF_SCOPE", "NOT_ELIGIBLE", "BLOCKED"):
+        return FoodCandidateGenerationResultDTO(
+            slot_id=slot.slot_id,
+            status=CandidateGenerationStatus.NOT_ELIGIBLE,
+            candidate_count=0,
+            candidates=[],
+            evaluated_candidate_count=0,
+            eligible_candidate_count=0,
+            returned_candidate_count=0,
+            rejected_counts_by_reason={CandidateRejectionReason.NUTRITION_NOT_ELIGIBLE.value: 1},
+            search_truncated=False,
+            policy_version=CandidatePolicy.VERSION,
+            ranking_policy_version=CandidatePolicy.RANKING_POLICY_VERSION,
+        )
+
+    # 2. Input Validation
     if slot.min_kcal <= 0:
         raise ValueError("Batas energi minimum slot (min_kcal) harus bernilai positif > 0.")
     if slot.max_kcal < slot.min_kcal:
@@ -38,7 +55,7 @@ def generate_food_candidates(
     rejected_counts: Dict[str, int] = defaultdict(int)
     eligible_foods = []
 
-    # 2. Filter Reference Food Pool
+    # 3. Filter Reference Food Pool
     for food in input_dto.food_pool:
         is_ok, reason, _ = is_food_eligible_for_candidate_pool(
             food=food,
@@ -59,28 +76,32 @@ def generate_food_candidates(
             status=CandidateGenerationStatus.NO_ELIGIBLE_FOODS,
             candidate_count=0,
             candidates=[],
+            evaluated_candidate_count=0,
+            eligible_candidate_count=0,
+            returned_candidate_count=0,
             rejected_counts_by_reason=dict(rejected_counts),
             search_truncated=False,
             policy_version=CandidatePolicy.VERSION,
+            ranking_policy_version=CandidatePolicy.RANKING_POLICY_VERSION,
         )
 
-    # 3. Role Mapping and Portion Generation
+    # 4. Role Mapping and Portion Generation (with discrete serving handling)
     items_by_role: Dict[FoodPlannerRole, List[FoodCandidateItemDTO]] = defaultdict(list)
     for food in eligible_foods:
         role = map_food_category_to_role(food.food_category)
         portions = generate_portion_options_for_food(food, role=role)
         items_by_role[role].extend(portions)
 
-    # 4. Generate Bounded Combinations
-    raw_candidates, search_truncated = generate_bounded_combinations(
+    # 5. Generate Bounded Combinations
+    raw_candidates, search_truncated, evaluated_count, eligible_count = generate_bounded_combinations(
         slot=slot,
         items_by_role=items_by_role,
     )
 
-    # 5. Deterministic Ranking
+    # 6. Deterministic Ranking (FOOD_CANDIDATE_RANKING_V01)
     ranked_candidates = rank_candidates(raw_candidates)[:CandidatePolicy.MAX_CANDIDATES_RETURNED]
 
-    # 6. Resolve Final Status
+    # 7. Resolve Final Status
     if not ranked_candidates:
         status = CandidateGenerationStatus.NO_STRICT_MATCH
     else:
@@ -92,7 +113,11 @@ def generate_food_candidates(
         status=status,
         candidate_count=len(ranked_candidates),
         candidates=ranked_candidates,
+        evaluated_candidate_count=evaluated_count,
+        eligible_candidate_count=eligible_count,
+        returned_candidate_count=len(ranked_candidates),
         rejected_counts_by_reason=dict(rejected_counts),
         search_truncated=search_truncated,
         policy_version=CandidatePolicy.VERSION,
+        ranking_policy_version=CandidatePolicy.RANKING_POLICY_VERSION,
     )

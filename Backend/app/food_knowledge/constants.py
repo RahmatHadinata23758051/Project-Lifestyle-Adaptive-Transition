@@ -96,6 +96,20 @@ class ServingConfidence(str, Enum):
     LOW = "LOW"
 
 
+class ServingDivisibility(str, Enum):
+    CONTINUOUS = "CONTINUOUS"
+    DISCRETE = "DISCRETE"
+    SEMI_DISCRETE = "SEMI_DISCRETE"
+    UNKNOWN = "UNKNOWN"
+
+
+class HalalStatus(str, Enum):
+    VERIFIED_HALAL = "VERIFIED_HALAL"
+    NOT_HALAL = "NOT_HALAL"
+    UNKNOWN = "UNKNOWN"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
 class AllergenType(str, Enum):
     GLUTEN_CEREAL = "GLUTEN_CEREAL"
     EGG = "EGG"

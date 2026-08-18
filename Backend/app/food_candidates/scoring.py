@@ -1,7 +1,7 @@
 import hashlib
 from typing import List, Optional
 from app.meal_structure.models import MealSlotDTO
-from app.food_candidates.constants import CandidateMatchStatus
+from app.food_candidates.constants import CandidateMatchStatus, CandidatePolicy
 from app.food_candidates.models import FoodCandidateItemDTO, FoodCandidateSetDTO
 
 
@@ -10,7 +10,7 @@ def build_candidate_set(
     items: List[FoodCandidateItemDTO],
 ) -> FoodCandidateSetDTO:
     """
-    Aggregates component items and validates energy against slot range.
+    Aggregates component items and validates energy against slot range and explicit near-match boundary (H1).
     """
     total_energy = round(sum(i.energy_kcal for i in items), 1)
 
@@ -26,21 +26,21 @@ def build_candidate_set(
     deviation = round(total_energy - slot.target_kcal, 1)
     abs_deviation = round(abs(deviation), 1)
 
-    # Match status check
+    # Explicit Near-Match Policy (H1)
     if slot.min_kcal <= total_energy <= slot.max_kcal:
         match_status = CandidateMatchStatus.STRICT_MATCH
     else:
-        # Near match if within 25% deviation from target
-        near_lower = slot.target_kcal * 0.75
-        near_upper = slot.target_kcal * 1.25
-        if near_lower <= total_energy <= near_upper:
+        ext_kcal = slot.target_kcal * CandidatePolicy.NEAR_MATCH_EXTENSION_RATIO
+        near_min = slot.min_kcal - ext_kcal
+        near_max = slot.max_kcal + ext_kcal
+        if near_min <= total_energy <= near_max:
             match_status = CandidateMatchStatus.NEAR_MATCH
         else:
             match_status = CandidateMatchStatus.INELIGIBLE
 
     # Deterministic candidate ID
     items_sig = "-".join(sorted(f"{i.food_item_id}:{i.grams:.0f}" for i in items))
-    cand_raw = f"{slot.slot_id}:{items_sig}"
+    cand_raw = f"{slot.slot_id}:{items_sig}:{CandidatePolicy.VERSION}"
     cand_id = "cand_" + hashlib.sha256(cand_raw.encode("utf-8")).hexdigest()[:12]
 
     explanations = [
@@ -68,10 +68,10 @@ def build_candidate_set(
 
 def rank_candidates(candidates: List[FoodCandidateSetDTO]) -> List[FoodCandidateSetDTO]:
     """
-    Deterministic ranking v0.1:
-    1. STRICT_MATCH before NEAR_MATCH / INELIGIBLE
+    Deterministic ranking policy (FOOD_CANDIDATE_RANKING_V01):
+    1. STRICT_MATCH (0) before NEAR_MATCH (1) / INELIGIBLE (2)
     2. Lowest absolute energy deviation from slot target
-    3. Highest protein content
+    3. Protein tie-breaker (highest protein as secondary scheduling preference)
     4. Deterministic candidate ID
     """
     def sort_key(c: FoodCandidateSetDTO):

@@ -77,10 +77,12 @@ def preview_food_candidates(
     input_dto = CandidateGenerationInputDTO(
         slot=slot_dto,
         food_pool=food_dtos,
+        nutrition_eligible=payload.nutrition_eligible,
+        nutrition_eligibility_status=payload.nutrition_eligibility_status,
         user_allergies=user_allergies,
         user_restrictions=payload.user_restrictions,
         cooking_capability=cooking_capability,
-        user_equipment=payload.user_equipment,
+        user_equipment=payload.user_equipment if payload.user_equipment is not None else ["STOVE", "RICE_COOKER", "FRIDGE"],
     )
 
     result_dto = generate_food_candidates(input_dto)
@@ -126,7 +128,11 @@ def preview_food_candidates(
         status=result_dto.status,
         candidate_count=result_dto.candidate_count,
         candidates=candidate_responses,
+        evaluated_candidate_count=result_dto.evaluated_candidate_count,
+        eligible_candidate_count=result_dto.eligible_candidate_count,
+        returned_candidate_count=result_dto.returned_candidate_count,
         rejected_counts_by_reason=result_dto.rejected_counts_by_reason,
         search_truncated=result_dto.search_truncated,
         policy_version=result_dto.policy_version,
+        ranking_policy_version=result_dto.ranking_policy_version,
     )
