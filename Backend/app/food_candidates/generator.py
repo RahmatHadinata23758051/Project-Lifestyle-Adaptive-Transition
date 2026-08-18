@@ -26,15 +26,21 @@ def generate_food_candidates(
     """
     Pure zero-I/O Food Candidate Engine (P1.2 Hardened).
     Generates deterministic, safe food combinations to fill a meal slot target.
-    Enforces nutrition eligibility gate, structured safety, and deterministic ranking.
+    Enforces single-source-of-truth nutrition eligibility gate and unknown->NEEDS_MORE_DATA semantics.
     """
     slot = input_dto.slot
 
-    # 1. P0.2 — Nutrition Eligibility Gate
-    if not input_dto.nutrition_eligible or input_dto.nutrition_eligibility_status in ("OUT_OF_SCOPE", "NOT_ELIGIBLE", "BLOCKED"):
+    # 1. P0.2 — Single Authoritative Nutrition Eligibility Gate
+    elig_status = (input_dto.nutrition_eligibility_status or "ELIGIBLE").upper()
+    if elig_status != "ELIGIBLE":
+        gen_status = (
+            CandidateGenerationStatus.NEEDS_MORE_DATA
+            if elig_status == "NEEDS_MORE_DATA"
+            else CandidateGenerationStatus.NOT_ELIGIBLE
+        )
         return FoodCandidateGenerationResultDTO(
             slot_id=slot.slot_id,
-            status=CandidateGenerationStatus.NOT_ELIGIBLE,
+            status=gen_status,
             candidate_count=0,
             candidates=[],
             evaluated_candidate_count=0,
@@ -71,9 +77,22 @@ def generate_food_candidates(
                 rejected_counts[reason.value] += 1
 
     if not eligible_foods:
+        # If all candidates failed solely due to unknown equipment / unknown allergen data, return NEEDS_MORE_DATA
+        has_unknown_equipment = CandidateRejectionReason.EQUIPMENT_UNKNOWN.value in rejected_counts
+        has_unknown_allergen = CandidateRejectionReason.ALLERGEN_UNKNOWN.value in rejected_counts
+        only_unknown_issues = all(
+            k in (CandidateRejectionReason.EQUIPMENT_UNKNOWN.value, CandidateRejectionReason.ALLERGEN_UNKNOWN.value)
+            for k in rejected_counts.keys()
+        )
+
+        if only_unknown_issues and (has_unknown_equipment or has_unknown_allergen):
+            fallback_status = CandidateGenerationStatus.NEEDS_MORE_DATA
+        else:
+            fallback_status = CandidateGenerationStatus.NO_ELIGIBLE_FOODS
+
         return FoodCandidateGenerationResultDTO(
             slot_id=slot.slot_id,
-            status=CandidateGenerationStatus.NO_ELIGIBLE_FOODS,
+            status=fallback_status,
             candidate_count=0,
             candidates=[],
             evaluated_candidate_count=0,

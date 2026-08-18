@@ -73,11 +73,10 @@ def preview_food_candidates(
     )
     food_dtos = [FoodKnowledgeService.record_to_dto(rec) for rec in food_records]
 
-    # 4. Invoke Pure Engine
+    # 4. Invoke Pure Engine with single-source-of-truth eligibility status
     input_dto = CandidateGenerationInputDTO(
         slot=slot_dto,
         food_pool=food_dtos,
-        nutrition_eligible=payload.nutrition_eligible,
         nutrition_eligibility_status=payload.nutrition_eligibility_status,
         user_allergies=user_allergies,
         user_restrictions=payload.user_restrictions,

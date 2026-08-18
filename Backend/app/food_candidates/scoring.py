@@ -11,6 +11,9 @@ def build_candidate_set(
 ) -> FoodCandidateSetDTO:
     """
     Aggregates component items and validates energy against slot range and explicit near-match boundary (H1).
+    Near match boundary definition:
+      near_min = round(slot.min_kcal - (slot.target_kcal * CandidatePolicy.NEAR_MATCH_EXTENSION_RATIO), 1)
+      near_max = round(slot.max_kcal + (slot.target_kcal * CandidatePolicy.NEAR_MATCH_EXTENSION_RATIO), 1)
     """
     total_energy = round(sum(i.energy_kcal for i in items), 1)
 
@@ -30,9 +33,9 @@ def build_candidate_set(
     if slot.min_kcal <= total_energy <= slot.max_kcal:
         match_status = CandidateMatchStatus.STRICT_MATCH
     else:
-        ext_kcal = slot.target_kcal * CandidatePolicy.NEAR_MATCH_EXTENSION_RATIO
-        near_min = slot.min_kcal - ext_kcal
-        near_max = slot.max_kcal + ext_kcal
+        extension_kcal = round(slot.target_kcal * CandidatePolicy.NEAR_MATCH_EXTENSION_RATIO, 1)
+        near_min = round(slot.min_kcal - extension_kcal, 1)
+        near_max = round(slot.max_kcal + extension_kcal, 1)
         if near_min <= total_energy <= near_max:
             match_status = CandidateMatchStatus.NEAR_MATCH
         else:

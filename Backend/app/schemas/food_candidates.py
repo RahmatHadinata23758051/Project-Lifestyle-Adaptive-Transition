@@ -49,8 +49,7 @@ class FoodCandidatePreviewInput(BaseModel):
     target_kcal: float = Field(..., gt=0)
     min_kcal: Optional[float] = None
     max_kcal: Optional[float] = None
-    nutrition_eligible: bool = True
-    nutrition_eligibility_status: str = "ELIGIBLE"
+    nutrition_eligibility_status: str = "ELIGIBLE"  # Single authoritative source of truth
     user_allergies: List[str] = []
     user_restrictions: List[str] = []
     cooking_capability: Optional[str] = None

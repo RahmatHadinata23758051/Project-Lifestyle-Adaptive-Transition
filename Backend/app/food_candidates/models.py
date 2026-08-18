@@ -47,12 +47,11 @@ class FoodCandidateSetDTO:
 class CandidateGenerationInputDTO:
     slot: MealSlotDTO
     food_pool: List[FoodKnowledgeItemDTO]
-    nutrition_eligible: bool = True
-    nutrition_eligibility_status: str = "ELIGIBLE"
+    nutrition_eligibility_status: str = "ELIGIBLE"  # Single authoritative source of truth
     user_allergies: List[str] = field(default_factory=list)
     user_restrictions: List[str] = field(default_factory=list)
     cooking_capability: Optional[str] = "CAN_COOK"  # CAN_COOK, LIMITED, BUY_ONLY, UNKNOWN
-    user_equipment: Optional[List[str]] = None  # None/UNKNOWN -> equipment unknown
+    user_equipment: Optional[List[str]] = None  # None -> unknown equipment
     preferred_foods: List[str] = field(default_factory=list)
     disliked_foods: List[str] = field(default_factory=list)
 

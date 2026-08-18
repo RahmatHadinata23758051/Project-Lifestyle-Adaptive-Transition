@@ -44,6 +44,7 @@ class CandidateRejectionReason(str, Enum):
 class CandidatePolicy:
     """
     Centralized Chronos Candidate Generation & Ranking Policy Parameters.
+    Note: These are deterministic product scheduling parameters, not medical standards.
     """
     VERSION: str = "FOOD_CANDIDATE_P1_2"
     RANKING_POLICY_VERSION: str = "FOOD_CANDIDATE_RANKING_V01"
@@ -51,6 +52,9 @@ class CandidatePolicy:
     MAX_SERVING_OPTIONS_PER_FOOD: int = 4
     MAX_COMBINATION_SIZE: int = 4
     MAX_CANDIDATES_RETURNED: int = 20
-    NEAR_MATCH_EXTENSION_RATIO: float = 0.10  # 10% extension beyond slot bounds
+
+    # Near Match Extension: near_min = min_kcal - (target_kcal * 0.10), near_max = max_kcal + (target_kcal * 0.10)
+    NEAR_MATCH_EXTENSION_RATIO: float = 0.10
+
     DEFAULT_CONTINUOUS_MULTIPLIERS = (0.5, 1.0, 1.5, 2.0)
     DEFAULT_DISCRETE_MULTIPLIERS = (1.0, 2.0, 3.0)
