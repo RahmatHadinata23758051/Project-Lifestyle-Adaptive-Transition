@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict, Any
 from app.core.config import settings
 from app.schemas.roadmap import EvaluationResult, AdaptationAction
-from app.engine.step_sizing import normalize_midnight_delta
+from app.engine.time_utils import signed_time_delta
 
 
 def evaluate_daily_deviation(
@@ -11,16 +11,17 @@ def evaluate_daily_deviation(
 ) -> Dict[str, Any]:
     """
     Evaluate daily deviation between target and actual check-in time.
-    Implements tiered tolerances without judgmental shaming.
+    NO DATA != FAILURE: Missing check-in produces NO_DATA with deviation = None.
     """
     if not did_open_app or actual_time_str is None:
         return {
-            "result": EvaluationResult.SIGNIFICANT_MISS,
-            "deviation_minutes": 999,
-            "reason": "Tidak ada akses aplikasi atau check-in hari ini.",
+            "result": EvaluationResult.NO_DATA,
+            "deviation_minutes": None,
+            "raw_delta_minutes": None,
+            "reason": "Tidak ada data check-in untuk dievaluasi hari ini.",
         }
 
-    raw_delta = normalize_midnight_delta(actual_time_str, target_time_str)
+    raw_delta = signed_time_delta(actual_time_str, target_time_str)
     abs_delta = abs(raw_delta)
 
     if abs_delta <= settings.TOLERANCE_SUCCESS_MINUTES:
@@ -50,8 +51,12 @@ def resolve_next_adaptation_action(
 ) -> AdaptationAction:
     """
     Resolve the next action for the adaptive roadmap based on current state and recent history.
+    NO_DATA -> MAINTAIN_STEP (does not advance, does not regress, does not trigger recovery).
     """
     history = recent_history or []
+
+    if current_result == EvaluationResult.NO_DATA:
+        return AdaptationAction.MAINTAIN_STEP
 
     if current_result == EvaluationResult.SUCCESS:
         return AdaptationAction.ADVANCE_STEP
@@ -60,7 +65,7 @@ def resolve_next_adaptation_action(
         return AdaptationAction.MAINTAIN_STEP
 
     if current_result == EvaluationResult.MISSED:
-        # Check if consecutive missed
+        # Check if the immediately preceding evaluation was also a miss
         if history and history[-1] in (EvaluationResult.MISSED, EvaluationResult.SIGNIFICANT_MISS):
             return AdaptationAction.REDUCE_STEP_SIZE
         return AdaptationAction.HOLD_TARGET
