@@ -8,9 +8,11 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ALLOWED_ORIGINS: List[str] = ["*"]
     
-    # Safe sleep and physiological constants
-    MINIMUM_SAFE_SLEEP_HOURS: float = 6.0
-    SAFE_DAILY_STEP_MINUTES: float = 7.5  # 15 minutes per 2 days
+    # Configurable Chronos Policy Parameters (Not absolute medical claims)
+    MINIMUM_SLEEP_OPPORTUNITY_HOURS: float = 6.0
+    DEFAULT_TRANSITION_RATE_MINUTES_PER_DAY: float = 7.5  # 15 minutes per 2 days
+    DEFAULT_STEP_SIZE_MINUTES: int = 15
+    DEFAULT_STEP_INTERVAL_DAYS: int = 2
     
     # Evaluation tolerance thresholds (in minutes)
     TOLERANCE_SUCCESS_MINUTES: int = 20
