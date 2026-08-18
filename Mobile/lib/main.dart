@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/screens/daily_plan_screen.dart';
+import 'presentation/screens/onboarding_screen.dart';
 
 void main() {
   runApp(const ChronosApp());
 }
 
 class ChronosApp extends StatelessWidget {
-  const ChronosApp({super.key});
+  final Widget? homeScreen;
+
+  const ChronosApp({super.key, this.homeScreen});
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +22,7 @@ class ChronosApp extends StatelessWidget {
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.system,
-        home: const DailyPlanScreen(),
+        home: homeScreen ?? const OnboardingScreen(),
       ),
     );
   }
