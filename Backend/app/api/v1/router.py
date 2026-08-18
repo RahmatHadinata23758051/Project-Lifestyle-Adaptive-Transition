@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     prices,
     budget_selection,
     daily_nutrition_plan,
+    nutrition_adherence,
 )
 
 api_router = APIRouter()
@@ -30,3 +31,4 @@ api_router.include_router(food_candidates.router, prefix="/food-candidates", tag
 api_router.include_router(prices.router, prefix="/prices", tags=["Price Knowledge Foundation"])
 api_router.include_router(budget_selection.router, prefix="/budget-selection", tags=["Budget-Aware Candidate Selection"])
 api_router.include_router(daily_nutrition_plan.router, prefix="/daily-nutrition-plan", tags=["Daily Nutrition Plan Assembly"])
+api_router.include_router(nutrition_adherence.router, prefix="/nutrition-checkins", tags=["Daily Check-in & Nutrition Adherence"])

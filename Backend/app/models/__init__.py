@@ -30,6 +30,11 @@ from app.models.price_knowledge import (
     FoodPriceObservationRecord,
     FoodPriceImportRunRecord,
 )
+from app.models.nutrition_adherence import (
+    NutritionMealCheckin,
+    NutritionUnplannedIntake,
+    NutritionActualItem,
+)
 
 __all__ = [
     "User",
@@ -62,4 +67,7 @@ __all__ = [
     "FoodPriceSourceRecord",
     "FoodPriceObservationRecord",
     "FoodPriceImportRunRecord",
+    "NutritionMealCheckin",
+    "NutritionUnplannedIntake",
+    "NutritionActualItem",
 ]
