@@ -25,6 +25,11 @@ from app.models.food_knowledge import (
     FoodItemAllergenRecord,
     FoodPreparationRequirementRecord,
 )
+from app.models.price_knowledge import (
+    FoodPriceSourceRecord,
+    FoodPriceObservationRecord,
+    FoodPriceImportRunRecord,
+)
 
 __all__ = [
     "User",
@@ -54,4 +59,7 @@ __all__ = [
     "FoodServingRecord",
     "FoodItemAllergenRecord",
     "FoodPreparationRequirementRecord",
+    "FoodPriceSourceRecord",
+    "FoodPriceObservationRecord",
+    "FoodPriceImportRunRecord",
 ]

@@ -1,0 +1,97 @@
+from enum import Enum
+
+
+class PriceUnit(str, Enum):
+    PER_KG = "PER_KG"
+    PER_100_G = "PER_100_G"
+    PER_GRAM = "PER_GRAM"
+    PER_LITER = "PER_LITER"
+    PER_100_ML = "PER_100_ML"
+    PER_ML = "PER_ML"
+    PER_UNIT = "PER_UNIT"
+    PER_PACKAGE = "PER_PACKAGE"
+    PER_SERVING = "PER_SERVING"
+
+
+class PriceBasis(str, Enum):
+    AS_SOLD = "AS_SOLD"
+    EDIBLE_PORTION = "EDIBLE_PORTION"
+    PREPARED = "PREPARED"
+    SERVING = "SERVING"
+    PACKAGE = "PACKAGE"
+
+
+class PriceSourceType(str, Enum):
+    USER_REPORTED = "USER_REPORTED"
+    MANUAL_CURATED = "MANUAL_CURATED"
+    GOVERNMENT_DATA = "GOVERNMENT_DATA"
+    RETAILER_FEED = "RETAILER_FEED"
+    MARKETPLACE_FEED = "MARKETPLACE_FEED"
+    RECEIPT_DERIVED = "RECEIPT_DERIVED"
+    LOCAL_SURVEY = "LOCAL_SURVEY"
+    UNKNOWN = "UNKNOWN"
+
+
+class PriceScopeType(str, Enum):
+    GLOBAL_REFERENCE = "GLOBAL_REFERENCE"
+    USER_PRIVATE = "USER_PRIVATE"
+
+
+class PriceQuality(str, Enum):
+    VERIFIED = "VERIFIED"
+    CURATED = "CURATED"
+    USER_REPORTED = "USER_REPORTED"
+    STALE = "STALE"
+    LOW_CONFIDENCE = "LOW_CONFIDENCE"
+    INVALID = "INVALID"
+
+
+class PriceConfidence(str, Enum):
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+    UNKNOWN = "UNKNOWN"
+
+
+class LocationMatch(str, Enum):
+    EXACT_LOCAL = "EXACT_LOCAL"
+    SAME_CITY = "SAME_CITY"
+    SAME_PROVINCE = "SAME_PROVINCE"
+    NATIONAL = "NATIONAL"
+    UNKNOWN = "UNKNOWN"
+
+
+class PriceFreshness(str, Enum):
+    FRESH = "FRESH"
+    AGING = "AGING"
+    STALE = "STALE"
+
+
+class PriceResolutionStatus(str, Enum):
+    RESOLVED = "RESOLVED"
+    RESOLVED_WITH_FALLBACK = "RESOLVED_WITH_FALLBACK"
+    NEEDS_MORE_DATA = "NEEDS_MORE_DATA"
+    NO_PRICE_DATA = "NO_PRICE_DATA"
+    INCOMPATIBLE_UNIT = "INCOMPATIBLE_UNIT"
+    STALE_ONLY = "STALE_ONLY"
+
+
+class CostCompleteness(str, Enum):
+    COMPLETE = "COMPLETE"
+    PARTIAL = "PARTIAL"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class PricePolicy:
+    """
+    Centralized Chronos Price Knowledge Policy Parameters.
+    """
+    VERSION: str = "PRICE_KNOWLEDGE_P1_3"
+    RESOLUTION_POLICY_VERSION: str = "PRICE_RESOLUTION_V01"
+    AGGREGATION_POLICY_VERSION: str = "PRICE_AGGREGATION_V01"
+    FRESHNESS_POLICY_VERSION: str = "PRICE_FRESHNESS_V01"
+    CANDIDATE_COST_POLICY_VERSION: str = "CANDIDATE_COST_V01"
+
+    FRESH_DAYS: int = 30
+    AGING_DAYS: int = 90
+    DEFAULT_CURRENCY: str = "IDR"
