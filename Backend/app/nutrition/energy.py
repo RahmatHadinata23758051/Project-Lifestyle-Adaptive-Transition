@@ -10,7 +10,9 @@ class EnergyCalculationResult:
     pal_category: PhysicalActivityCategory
     pal_reason: str
     maintenance_estimate_kcal: float
-    starting_surplus_kcal: int
+    requested_surplus_kcal: int
+    applied_surplus_kcal: int
+    surplus_was_adjusted: bool
     target_kcal: float
     rounded_display_kcal: int
 
@@ -83,8 +85,11 @@ class EnergyCalculator:
             pal=pal,
         )
 
-        surplus = min(max(starting_surplus_kcal, 0), NutritionPolicy.MAX_STARTING_SURPLUS_KCAL)
-        target = round(maintenance + surplus, 2)
+        requested_surplus = starting_surplus_kcal
+        applied_surplus = min(max(requested_surplus, 0), NutritionPolicy.MAX_STARTING_SURPLUS_KCAL)
+        surplus_adjusted = applied_surplus != requested_surplus
+
+        target = round(maintenance + applied_surplus, 2)
         rounded_display = int(round(target / 50.0) * 50)
 
         return EnergyCalculationResult(
@@ -93,7 +98,9 @@ class EnergyCalculator:
             pal_category=pal,
             pal_reason=pal_reason,
             maintenance_estimate_kcal=maintenance,
-            starting_surplus_kcal=surplus,
+            requested_surplus_kcal=requested_surplus,
+            applied_surplus_kcal=applied_surplus,
+            surplus_was_adjusted=surplus_adjusted,
             target_kcal=target,
             rounded_display_kcal=rounded_display,
         )

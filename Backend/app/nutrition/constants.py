@@ -8,6 +8,22 @@ class PhysicalActivityCategory(str, Enum):
     VERY_ACTIVE = "VERY_ACTIVE"
 
 
+class PALAssessmentStatus(str, Enum):
+    RESOLVED = "RESOLVED"
+    UNDETERMINED = "UNDETERMINED"
+    INVALID = "INVALID"
+
+
+class CalculationSource(str, Enum):
+    LIVE_PREVIEW = "LIVE_PREVIEW"
+    ASSESSMENT_SNAPSHOT = "ASSESSMENT_SNAPSHOT"
+
+
+class PALResolutionMethod(str, Enum):
+    USER_CONFIRMED = "USER_CONFIRMED"
+    ASSESSMENT_CONFIRMED = "ASSESSMENT_CONFIRMED"
+
+
 class NutritionEligibilityStatus(str, Enum):
     ELIGIBLE = "ELIGIBLE"
     NEEDS_MORE_DATA = "NEEDS_MORE_DATA"
@@ -21,7 +37,7 @@ class NutritionPolicy:
     MINIMUM_SUPPORTED_AGE: int = 19
     DEFAULT_INITIAL_SURPLUS_KCAL: int = 300
     MAX_STARTING_SURPLUS_KCAL: int = 500
-    PROTEIN_RDA_FLOOR_G_PER_KG: float = 0.8
+    PROTEIN_RDA_REFERENCE_G_PER_KG: float = 0.8
 
     # Acceptable Macronutrient Distribution Ranges (AMDR) Percentages of Total Energy
     AMDR_CARBOHYDRATE_PERCENT: tuple[int, int] = (45, 65)

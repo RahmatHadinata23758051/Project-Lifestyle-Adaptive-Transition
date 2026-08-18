@@ -5,7 +5,7 @@ from app.nutrition.constants import NutritionPolicy
 
 @dataclass
 class MacroReferenceResult:
-    protein_rda_floor_g: float
+    protein_rda_reference_g: float
     training_target_g: Optional[float]
     amdr_percentages: Dict[str, list[int]]
     amdr_gram_ranges: Dict[str, list[int]]
@@ -17,10 +17,10 @@ class MacroCalculator:
     """
 
     @staticmethod
-    def calculate_protein_rda_floor(weight_kg: float) -> float:
+    def calculate_protein_rda_reference(weight_kg: float) -> float:
         if weight_kg <= 0:
             raise ValueError("Berat badan harus bernilai positif.")
-        return round(weight_kg * NutritionPolicy.PROTEIN_RDA_FLOOR_G_PER_KG, 1)
+        return round(weight_kg * NutritionPolicy.PROTEIN_RDA_REFERENCE_G_PER_KG, 1)
 
     @classmethod
     def calculate_macro_reference(
@@ -28,7 +28,7 @@ class MacroCalculator:
         weight_kg: float,
         target_kcal: float,
     ) -> MacroReferenceResult:
-        protein_floor = cls.calculate_protein_rda_floor(weight_kg)
+        protein_reference = cls.calculate_protein_rda_reference(weight_kg)
 
         carb_min_kcal = target_kcal * (NutritionPolicy.AMDR_CARBOHYDRATE_PERCENT[0] / 100.0)
         carb_max_kcal = target_kcal * (NutritionPolicy.AMDR_CARBOHYDRATE_PERCENT[1] / 100.0)
@@ -53,7 +53,7 @@ class MacroCalculator:
         }
 
         return MacroReferenceResult(
-            protein_rda_floor_g=protein_floor,
+            protein_rda_reference_g=protein_reference,
             training_target_g=None,  # TBD per specification section 19
             amdr_percentages=percentages,
             amdr_gram_ranges=gram_ranges,

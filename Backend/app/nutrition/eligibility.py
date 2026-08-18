@@ -68,7 +68,7 @@ class NutritionEligibilityEvaluator:
         if has_unexplained_weight_loss:
             return EligibilityResult(
                 status=NutritionEligibilityStatus.PROFESSIONAL_GUIDANCE_RECOMMENDED,
-                reasons=["Penurunan berat badan mendadak tanpa penyebab jelas."],
+                reasons=["Penurunan berat badan yang tidak dapat dijelaskan."],
                 guidance="Disarankan melakukan pemeriksaan medis untuk memastikan tidak ada kondisi kesehatan mendasar sebelum memulai program surplus energi.",
                 is_eligible=False,
             )

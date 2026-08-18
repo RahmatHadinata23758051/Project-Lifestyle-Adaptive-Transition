@@ -1,70 +1,87 @@
-from typing import Optional, List
+from typing import Optional
 from dataclasses import dataclass
-from app.nutrition.constants import PhysicalActivityCategory
+from app.nutrition.constants import (
+    PhysicalActivityCategory,
+    PALAssessmentStatus,
+    PALResolutionMethod,
+)
+
+
+@dataclass
+class PALContext:
+    occupation_movement: Optional[str] = None
+    transport_activity: Optional[str] = None
+    daily_movement: Optional[str] = None
+    planned_exercise: Optional[str] = None
+    recreational_activity: Optional[str] = None
 
 
 @dataclass
 class PALAssessmentResult:
-    category: PhysicalActivityCategory
+    category: Optional[PhysicalActivityCategory]
+    status: PALAssessmentStatus
     reason: str
+    resolution_method: Optional[PALResolutionMethod] = None
     is_valid: bool = True
 
 
 class PALClassifier:
     """
-    Structured PAL (Physical Activity Level) Classifier.
-    Maps lifestyle movement and exercise habits into 2023 DRI PAL categories with full traceability.
+    Structured PAL (Physical Activity Level) Classifier for Nutrition Intelligence v0.1.
+    Adheres strictly to the Zero-Guessing principle: no automatic minute-based heuristic mappings.
+    PAL must be explicitly confirmed or resolved through validated assessment.
     """
 
     @classmethod
     def classify(
         cls,
+        confirmed_pal_category: Optional[PhysicalActivityCategory | str] = None,
+        pal_override: Optional[PhysicalActivityCategory | str] = None,
+        context: Optional[PALContext] = None,
+        # Legacy parameters accepted but not used as authoritative heuristics in v0.1 hardening
         occupation_type: Optional[str] = None,
         available_days_per_week: Optional[int] = None,
         minutes_per_session: Optional[int] = None,
-        pal_override: Optional[PhysicalActivityCategory] = None,
     ) -> PALAssessmentResult:
-        if pal_override:
-            return PALAssessmentResult(
-                category=pal_override,
-                reason=f"Kategori PAL diset langsung sebagai {pal_override.value}.",
-            )
+        pal_input = confirmed_pal_category or pal_override
 
-        days = available_days_per_week or 0
-        minutes = minutes_per_session or 0
-        occ = (occupation_type or "").upper()
-        total_weekly_exercise_minutes = days * minutes
-
-        # Active physical worker (e.g. construction, manual laborer, active field worker)
-        if occ in ["FIELD_WORKER", "MANUAL_LABOR", "ATHLETE"]:
-            if total_weekly_exercise_minutes >= 180:
+        if pal_input is not None:
+            if isinstance(pal_input, PhysicalActivityCategory):
+                resolved_cat = pal_input
+            elif isinstance(pal_input, str):
+                try:
+                    resolved_cat = PhysicalActivityCategory(pal_input.upper())
+                except ValueError:
+                    return PALAssessmentResult(
+                        category=None,
+                        status=PALAssessmentStatus.INVALID,
+                        reason=f"Kategori PAL '{pal_input}' tidak valid.",
+                        resolution_method=None,
+                        is_valid=False,
+                    )
+            else:
                 return PALAssessmentResult(
-                    category=PhysicalActivityCategory.VERY_ACTIVE,
-                    reason="Aktivitas kerja fisik tinggi ditambah latihan terstruktur intensif (>=180 menit/minggu).",
+                    category=None,
+                    status=PALAssessmentStatus.INVALID,
+                    reason="Tipe input kategori PAL tidak valid.",
+                    resolution_method=None,
+                    is_valid=False,
                 )
+
             return PALAssessmentResult(
-                category=PhysicalActivityCategory.ACTIVE,
-                reason="Pekerjaan aktif fisik harian dengan kebutuhan energi dinamis.",
+                category=resolved_cat,
+                status=PALAssessmentStatus.RESOLVED,
+                reason="Kategori PAL telah dikonfirmasi secara eksplisit melalui assessment pengguna.",
+                resolution_method=PALResolutionMethod.USER_CONFIRMED,
+                is_valid=True,
             )
 
-        # Standard Sedentary / Desk worker / Student
-        if total_weekly_exercise_minutes >= 240:
-            return PALAssessmentResult(
-                category=PhysicalActivityCategory.VERY_ACTIVE,
-                reason="Aktivitas harian umum dengan volume latihan terstruktur sangat tinggi (>=240 menit/minggu).",
-            )
-        elif total_weekly_exercise_minutes >= 120 or days >= 4:
-            return PALAssessmentResult(
-                category=PhysicalActivityCategory.ACTIVE,
-                reason=f"Latihan terstruktur rutin ({days} hari/minggu, total {total_weekly_exercise_minutes} menit).",
-            )
-        elif total_weekly_exercise_minutes >= 45 or days >= 2:
-            return PALAssessmentResult(
-                category=PhysicalActivityCategory.LOW_ACTIVE,
-                reason=f"Aktivitas harian ringan dengan latihan moderat ({days} hari/minggu, {total_weekly_exercise_minutes} menit).",
-            )
-        else:
-            return PALAssessmentResult(
-                category=PhysicalActivityCategory.INACTIVE,
-                reason="Aktivitas harian dominan menetap/sedentari dengan latihan minimal (<45 menit/minggu).",
-            )
+        # In v0.1 hardening: without confirmed PAL, status remains UNDETERMINED.
+        # Zero-guessing rule: Never default to INACTIVE or derive authoritative PAL from exercise minutes alone.
+        return PALAssessmentResult(
+            category=None,
+            status=PALAssessmentStatus.UNDETERMINED,
+            reason="Konteks aktivitas fisik belum mencukupi untuk menentukan kategori PAL secara definitif. Konfirmasi kategori PAL diperlukan.",
+            resolution_method=None,
+            is_valid=True,
+        )
