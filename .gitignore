@@ -4,6 +4,11 @@
 .env.local
 .env.*.local
 
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
 # Git Worktrees (Multi-agent workspace isolation)
 .worktrees/
 worktrees/

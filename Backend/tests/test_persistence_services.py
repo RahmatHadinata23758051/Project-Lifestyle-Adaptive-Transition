@@ -1,11 +1,6 @@
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 from httpx import AsyncClient, ASGITransport
 
-from app.db.base import Base
-from app.db.session import get_db
 from app.main import app
 from app.schemas.profile import CurrentSelfBaseline, TargetSelfGoal, CookingCapability, ExerciseFacility, BodyObjective
 from app.schemas.constraints import UserConstraint, ConstraintCategory, DayOfWeek
@@ -13,36 +8,8 @@ from app.services.roadmap_service import create_user_transition_roadmap, get_act
 from app.services.checkin_service import process_item_checkin, evaluate_daily_plan_completion
 
 
-# In-memory SQLite with StaticPool so all connections share the same in-memory tables
-TEST_DATABASE_URL = "sqlite:///:memory:"
-test_engine = create_engine(
-    TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
-
-
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-
-@pytest.fixture(autouse=True)
-def setup_test_db():
-    Base.metadata.create_all(bind=test_engine)
-    yield
-    Base.metadata.drop_all(bind=test_engine)
-
-
-def test_roadmap_generation_and_checkin_flow():
-    db = TestingSessionLocal()
+def test_roadmap_generation_and_checkin_flow(db_session):
+    db = db_session
 
     baseline = CurrentSelfBaseline(
         bedtime="02:00",

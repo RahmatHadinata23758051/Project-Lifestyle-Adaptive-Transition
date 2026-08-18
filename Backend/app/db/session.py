@@ -2,6 +2,7 @@ from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from app.db.base import Base
+import app.models  # Ensure all ORM models are registered
 
 DATABASE_URL = "sqlite:///./chronos.db"
 
