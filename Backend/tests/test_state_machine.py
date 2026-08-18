@@ -6,8 +6,19 @@ from app.engine.state_machine import (
 )
 
 
+def test_evaluate_daily_deviation_no_data():
+    # User did not open app or no check-in -> NO_DATA, deviation_minutes is None
+    eval_res = evaluate_daily_deviation("08:00", None, did_open_app=False)
+    assert eval_res["result"] == EvaluationResult.NO_DATA
+    assert eval_res["deviation_minutes"] is None
+    assert eval_res["raw_delta_minutes"] is None
+
+    # Adaptation for NO_DATA is MAINTAIN_STEP (not ENTER_RECOVERY)
+    action = resolve_next_adaptation_action(eval_res["result"])
+    assert action == AdaptationAction.MAINTAIN_STEP
+
+
 def test_evaluate_daily_deviation_success():
-    # Target 08:00, Actual 08:15 (15m delta <= 20m) -> SUCCESS
     eval_res = evaluate_daily_deviation("08:00", "08:15", did_open_app=True)
     assert eval_res["result"] == EvaluationResult.SUCCESS
     assert eval_res["deviation_minutes"] == 15
@@ -15,7 +26,6 @@ def test_evaluate_daily_deviation_success():
 
 
 def test_evaluate_daily_deviation_within_tolerance():
-    # Target 08:00, Actual 08:35 (35m delta: 21m <= delta <= 45m) -> WITHIN_TOLERANCE
     eval_res = evaluate_daily_deviation("08:00", "08:35", did_open_app=True)
     assert eval_res["result"] == EvaluationResult.WITHIN_TOLERANCE
     assert eval_res["deviation_minutes"] == 35
@@ -23,7 +33,6 @@ def test_evaluate_daily_deviation_within_tolerance():
 
 
 def test_evaluate_daily_deviation_single_miss():
-    # Target 08:00, Actual 09:10 (70m delta: 46m <= delta <= 90m) -> MISSED
     eval_res = evaluate_daily_deviation("08:00", "09:10", did_open_app=True)
     assert eval_res["result"] == EvaluationResult.MISSED
     # Single miss without history should HOLD_TARGET
@@ -39,15 +48,16 @@ def test_evaluate_daily_deviation_consecutive_miss():
     assert action == AdaptationAction.REDUCE_STEP_SIZE
 
 
-def test_evaluate_daily_deviation_zero_app_open():
-    # User did not open app -> SIGNIFICANT_MISS & ENTER_RECOVERY
-    eval_res = evaluate_daily_deviation("08:00", None, did_open_app=False)
-    assert eval_res["result"] == EvaluationResult.SIGNIFICANT_MISS
-    assert resolve_next_adaptation_action(eval_res["result"]) == AdaptationAction.ENTER_RECOVERY
+def test_evaluate_daily_deviation_miss_success_miss_not_consecutive():
+    # MISS -> SUCCESS -> MISS should be HOLD_TARGET (not reduce step)
+    action = resolve_next_adaptation_action(
+        EvaluationResult.MISSED,
+        recent_history=[EvaluationResult.MISSED, EvaluationResult.SUCCESS]
+    )
+    assert action == AdaptationAction.HOLD_TARGET
 
 
-def test_evaluate_daily_deviation_large_miss():
-    # Target 08:00, Actual 11:30 (210m delta > 90m) -> SIGNIFICANT_MISS
+def test_evaluate_daily_deviation_significant_miss():
     eval_res = evaluate_daily_deviation("08:00", "11:30", did_open_app=True)
     assert eval_res["result"] == EvaluationResult.SIGNIFICANT_MISS
     assert resolve_next_adaptation_action(eval_res["result"]) == AdaptationAction.ENTER_RECOVERY
