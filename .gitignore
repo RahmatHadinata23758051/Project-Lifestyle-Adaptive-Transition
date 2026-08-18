@@ -10,6 +10,7 @@ revisi*.md
 perbaikan*.md
 prompt*.md
 *.prompt.md
+dynamic-assessment-architecture.md
 
 # Databases
 *.db

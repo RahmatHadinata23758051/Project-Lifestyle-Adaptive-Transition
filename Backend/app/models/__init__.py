@@ -11,6 +11,11 @@ from app.models.identity import (
     GoalPriority,
     GoalStatus,
 )
+from app.models.assessment import (
+    NutritionBaseline,
+    ActivityBaseline,
+    AssessmentSnapshotRecord,
+)
 
 __all__ = [
     "User",
@@ -30,4 +35,7 @@ __all__ = [
     "GoalDomain",
     "GoalPriority",
     "GoalStatus",
+    "NutritionBaseline",
+    "ActivityBaseline",
+    "AssessmentSnapshotRecord",
 ]
