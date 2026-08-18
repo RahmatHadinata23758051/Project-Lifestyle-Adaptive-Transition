@@ -33,12 +33,13 @@ def select_budget_aware_candidates(
         "ranking_policy": BudgetSelectionPolicy.RANKING_POLICY_VERSION,
     }
 
-    # 1. Derive Daily Budget Envelope
+    # 1. Derive Daily Budget Envelope (with conflict check)
     envelope_idr, env_status, env_msg = derive_daily_budget_envelope(input_dto.budget_context)
     if env_status in (
         BudgetSelectionStatus.BUDGET_NOT_CONFIGURED,
         BudgetSelectionStatus.BUDGET_ALREADY_EXCEEDED,
         BudgetSelectionStatus.NEEDS_MORE_BUDGET_DATA,
+        BudgetSelectionStatus.BUDGET_CONTEXT_CONFLICT,
     ):
         explanations = generate_selection_explanations(env_status, envelope_idr, None)
         return BudgetAwareSelectionResultDTO(
@@ -179,19 +180,25 @@ def select_budget_aware_candidates(
             policy_versions=policy_versions,
         )
 
-    # No feasible combination found
-    shortfall = None
-    if min_cost_found is not None and envelope_idr is not None and min_cost_found > envelope_idr:
-        shortfall = min_cost_found - envelope_idr
+    # No feasible combination found in evaluated set:
+    # Invariant: If search was truncated, do not falsely claim definitive budget insufficiency or exact shortfall!
+    if search_truncated:
+        final_status = BudgetSelectionStatus.SEARCH_INCOMPLETE
+        shortfall = None
+    else:
+        final_status = BudgetSelectionStatus.NO_BUDGET_FEASIBLE_SELECTION
+        shortfall = None
+        if min_cost_found is not None and envelope_idr is not None and min_cost_found > envelope_idr:
+            shortfall = min_cost_found - envelope_idr
 
     explanations = generate_selection_explanations(
-        BudgetSelectionStatus.NO_BUDGET_FEASIBLE_SELECTION, envelope_idr, None, shortfall_idr=shortfall
+        final_status, envelope_idr, None, shortfall_idr=shortfall
     )
 
     return BudgetAwareSelectionResultDTO(
         date=input_dto.date,
         logical_day_id=input_dto.logical_day_id,
-        status=BudgetSelectionStatus.NO_BUDGET_FEASIBLE_SELECTION,
+        status=final_status,
         budget_envelope_idr=envelope_idr,
         selected_combination=None,
         alternatives=[],

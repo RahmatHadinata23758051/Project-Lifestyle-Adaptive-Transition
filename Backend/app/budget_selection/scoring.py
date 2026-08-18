@@ -1,5 +1,5 @@
 import hashlib
-from typing import List, Dict, Tuple
+from typing import List, Dict
 from app.budget_selection.constants import (
     CandidateBudgetStatus,
     BudgetSelectionPolicy,
@@ -66,12 +66,13 @@ def rank_combinations(
     """
     Ranks daily candidate combinations using BUDGET_SELECTION_RANKING_V01:
     1. Feasible within budget envelope (remaining >= 0)
-    2. All STRICT_MATCH nutrition fit preferred over combinations with NEAR_MATCH
-    3. Higher price confidence (HIGH > MEDIUM > LOW)
-    4. Lowest total absolute energy deviation
-    5. Highest user preference score
-    6. Lower total cost (secondary tie-break, not cheapest-by-default)
-    7. Stable combination ID hash
+    2. Fresh/Aging prices preferred over Stale prices (stale is fallback only)
+    3. All STRICT_MATCH nutrition fit preferred over combinations with NEAR_MATCH
+    4. Higher price confidence (HIGH > MEDIUM > LOW)
+    5. Lowest total absolute energy deviation
+    6. Highest user preference score
+    7. Lower total cost (secondary tie-break, not cheapest-by-default)
+    8. Stable combination ID hash
     """
     conf_rank = {
         PriceConfidence.HIGH: 3,
@@ -82,17 +83,18 @@ def rank_combinations(
 
     def sort_key(c: DailyCandidateCombinationDTO):
         is_within_budget = 1 if c.remaining_after_selection_idr >= 0 else 0
+        is_fresh = 0 if c.uses_stale_prices else 1  # Fresh/Aging gets 1, Stale gets 0
         nutrition_tier = 1 if c.all_strict_nutrition else 0
         c_conf = conf_rank.get(c.price_confidence, 0)
-        # We sort descending for positive qualities, ascending for deviations/cost
         return (
-            is_within_budget,           # 1 (feasible) before 0 (over-budget)
-            nutrition_tier,             # 1 (all strict) before 0 (near match present)
-            c_conf,                     # 3 (HIGH) before 2 before 1
+            is_within_budget,             # 1 (feasible) before 0 (over-budget)
+            is_fresh,                     # 1 (fresh/aging) before 0 (stale fallback)
+            nutrition_tier,               # 1 (all strict) before 0 (near match present)
+            c_conf,                       # 3 (HIGH) before 2 before 1
             -c.nutrition_deviation_score, # Lower deviation is better
-            c.preference_score,         # Higher preference is better
-            -c.total_estimated_cost_idr, # Lower cost as secondary tie-break
-            c.combination_id,           # Stable tie-break
+            c.preference_score,           # Higher preference is better
+            -c.total_estimated_cost_idr,   # Lower cost as secondary tie-break
+            c.combination_id,             # Stable tie-break
         )
 
     return sorted(combinations, key=sort_key, reverse=True)

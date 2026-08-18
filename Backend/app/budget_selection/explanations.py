@@ -39,6 +39,16 @@ def generate_selection_explanations(
         else:
             explanations.append("No candidate combination meets all slot targets within the daily budget envelope.")
 
+    elif status == BudgetSelectionStatus.SEARCH_INCOMPLETE:
+        explanations.append(
+            "Candidate search limit reached before evaluating all combinations. No feasible combination found within evaluated subset (indeterminate feasibility; exact shortfall cannot be proven)."
+        )
+
+    elif status == BudgetSelectionStatus.BUDGET_CONTEXT_CONFLICT:
+        explanations.append(
+            "Conflict detected: Explicit daily budget exceeds the remaining authoritative period budget. Please update period budget first."
+        )
+
     elif status == BudgetSelectionStatus.NEEDS_MORE_PRICE_DATA:
         explanations.append(
             "One or more active meal slots lack complete price evidence. Missing price data is not assumed to be zero."

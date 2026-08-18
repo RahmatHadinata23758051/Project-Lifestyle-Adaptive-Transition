@@ -296,30 +296,87 @@ def test_stale_prices_fallback_yields_selection_found_with_low_confidence_price(
     assert res.selected_combination.uses_stale_prices is True
 
 
-def test_search_truncation_and_determinism():
-    # Large candidate pool
-    cands_s1 = [make_cand(f"c1_{i}", "slot_1") for i in range(20)]
-    cands_s2 = [make_cand(f"c2_{i}", "slot_2") for i in range(20)]
+def test_search_truncation_without_feasible_candidate_yields_search_incomplete():
+    # Force search truncation by creating lots of combinations exceeding budget
+    cands_s1 = [make_cand(f"c1_{i}", "slot_1") for i in range(15)]
+    cands_s2 = [make_cand(f"c2_{i}", "slot_2") for i in range(15)]
+    cands_s3 = [make_cand(f"c3_{i}", "slot_3") for i in range(15)]
+    cands_s4 = [make_cand(f"c4_{i}", "slot_4") for i in range(15)]
 
+    # All cost Rp 20.000 (total combo cost = 80.000)
     costs = {}
-    for c in cands_s1 + cands_s2:
-        costs[c.candidate_id] = make_cost(c.candidate_id, 10000)
+    for c in cands_s1 + cands_s2 + cands_s3 + cands_s4:
+        costs[c.candidate_id] = make_cost(c.candidate_id, 20000)
 
+    # Budget is Rp 50.000 (none will fit in 5000 evaluated combinations of 50625 total)
     input_dto = BudgetAwareSelectionInputDTO(
         date="2026-08-19",
         logical_day_id="ld_1",
-        slot_ids=["slot_1", "slot_2"],
-        candidates_by_slot={"slot_1": cands_s1, "slot_2": cands_s2},
+        slot_ids=["slot_1", "slot_2", "slot_3", "slot_4"],
+        candidates_by_slot={"slot_1": cands_s1, "slot_2": cands_s2, "slot_3": cands_s3, "slot_4": cands_s4},
         candidate_costs_by_candidate_id=costs,
         budget_context=BudgetContextDTO(budget_period=BudgetPeriod.DAILY, total_food_budget_idr=50000),
     )
 
-    res1 = select_budget_aware_candidates(input_dto)
-    res2 = select_budget_aware_candidates(input_dto)
+    res = select_budget_aware_candidates(input_dto)
+    assert res.status == BudgetSelectionStatus.SEARCH_INCOMPLETE
+    assert res.search_truncated is True
+    assert res.shortfall_idr is None  # Cannot claim exact shortfall under incomplete search!
 
-    assert res1.status == BudgetSelectionStatus.SELECTION_FOUND
-    assert res1.selected_combination.combination_id == res2.selected_combination.combination_id
-    assert res1.selected_combination.total_estimated_cost_idr == res2.selected_combination.total_estimated_cost_idr
+
+def test_explicit_today_budget_exceeding_remaining_period_budget_yields_conflict():
+    # User declares today budget 70k, but remaining weekly budget is only 40k
+    ctx = BudgetContextDTO(
+        budget_period=BudgetPeriod.WEEKLY,
+        total_food_budget_idr=280000,
+        remaining_food_budget_idr=40000,
+        period_days_remaining=2,
+        explicit_today_budget_idr=70000,
+    )
+    env, status, msg = derive_daily_budget_envelope(ctx)
+    assert env is None
+    assert status == BudgetSelectionStatus.BUDGET_CONTEXT_CONFLICT
+    assert "exceeds remaining period budget" in msg
+
+
+def test_invalid_period_days_remaining_zero_or_negative():
+    # period_days_remaining <= 0 on multi-day period
+    ctx = BudgetContextDTO(
+        budget_period=BudgetPeriod.WEEKLY,
+        total_food_budget_idr=350000,
+        remaining_food_budget_idr=100000,
+        period_days_remaining=0,  # Invalid
+    )
+    env, status, _ = derive_daily_budget_envelope(ctx)
+    assert env is None
+    assert status == BudgetSelectionStatus.NEEDS_MORE_BUDGET_DATA
+
+
+def test_fresh_feasible_combination_strictly_preferred_over_cheaper_stale_fallback():
+    # Fresh candidate (Rp 18.000) vs Stale candidate (Rp 10.000). Budget is Rp 20.000.
+    cand_fresh = make_cand("c_fresh", "slot_1")
+    cand_stale = make_cand("c_stale_opt", "slot_1")
+
+    costs = {
+        "c_fresh": make_cost("c_fresh", 18000, confidence=PriceConfidence.HIGH, uses_stale=False),
+        "c_stale_opt": make_cost("c_stale_opt", 10000, confidence=PriceConfidence.LOW, uses_stale=True),
+    }
+
+    input_dto = BudgetAwareSelectionInputDTO(
+        date="2026-08-19",
+        logical_day_id="ld_1",
+        slot_ids=["slot_1"],
+        candidates_by_slot={"slot_1": [cand_stale, cand_fresh]},
+        candidate_costs_by_candidate_id=costs,
+        budget_context=BudgetContextDTO(budget_period=BudgetPeriod.DAILY, total_food_budget_idr=20000),
+    )
+
+    res = select_budget_aware_candidates(input_dto)
+    # Must select fresh combination, NOT stale combination merely because it's cheaper!
+    assert res.status == BudgetSelectionStatus.SELECTION_FOUND
+    assert res.selected_combination.selections["slot_1"].candidate_id == "c_fresh"
+    assert res.selected_combination.uses_stale_prices is False
+
 
 
 @pytest.mark.asyncio
