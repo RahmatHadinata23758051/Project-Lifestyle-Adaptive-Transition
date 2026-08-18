@@ -18,18 +18,24 @@ def generate_bounded_daily_combinations(
 ) -> Tuple[List[DailyCandidateCombinationDTO], bool, int, Optional[int]]:
     """
     Performs bounded deterministic daily candidate combination search (BUDGET_SELECTION_SEARCH_V01).
+    Invariant: search_truncated is True if EITHER any per-slot pool was truncated OR the combinatorial search hit its evaluation cap.
     Returns (combinations, search_truncated, evaluated_count, min_combination_cost_found).
     """
     if not slot_ids:
         return [], False, 0, None
 
-    # Filter only candidates with COMPLETE price data (ignore UNKNOWN_COST)
+    per_slot_truncated = False
     valid_pools: List[List[BudgetCandidateEvaluationDTO]] = []
+
     for slot_id in slot_ids:
         pool = candidates_by_slot.get(slot_id, [])
         complete_candidates = [
             c for c in pool if c.estimated_cost_idr is not None and c.budget_status != CandidateBudgetStatus.UNKNOWN_COST
         ]
+
+        if len(complete_candidates) > BudgetSelectionPolicy.MAX_CANDIDATES_PER_SLOT_FOR_BUDGET_SEARCH:
+            per_slot_truncated = True
+
         # Bounded slice per slot
         bounded_pool = complete_candidates[: BudgetSelectionPolicy.MAX_CANDIDATES_PER_SLOT_FOR_BUDGET_SEARCH]
         if not bounded_pool:
@@ -39,13 +45,13 @@ def generate_bounded_daily_combinations(
 
     # Combinatorial search with early pruning and evaluation counter
     evaluated_count = 0
-    search_truncated = False
+    combination_truncated = False
     all_combinations: List[DailyCandidateCombinationDTO] = []
     min_cost_found: Optional[int] = None
 
     for prod in itertools.product(*valid_pools):
         if evaluated_count >= BudgetSelectionPolicy.MAX_DAILY_COMBINATIONS_EVALUATED:
-            search_truncated = True
+            combination_truncated = True
             break
 
         evaluated_count += 1
@@ -57,4 +63,5 @@ def generate_bounded_daily_combinations(
 
         all_combinations.append(comb)
 
+    search_truncated = per_slot_truncated or combination_truncated
     return all_combinations, search_truncated, evaluated_count, min_cost_found

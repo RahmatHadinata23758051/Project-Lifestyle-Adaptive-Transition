@@ -296,6 +296,28 @@ def test_stale_prices_fallback_yields_selection_found_with_low_confidence_price(
     assert res.selected_combination.uses_stale_prices is True
 
 
+def test_per_slot_candidate_truncation_yields_search_incomplete_when_no_feasible_found():
+    # Slot 1 has 20 candidates (> 15 per slot limit), but single slot combination search is only 15 iterations (< 5000)
+    cands_s1 = [make_cand(f"c1_{i}", "slot_1") for i in range(20)]
+    costs = {c.candidate_id: make_cost(c.candidate_id, 30000) for c in cands_s1}
+
+    # Budget is Rp 25.000 (none fit)
+    input_dto = BudgetAwareSelectionInputDTO(
+        date="2026-08-19",
+        logical_day_id="ld_1",
+        slot_ids=["slot_1"],
+        candidates_by_slot={"slot_1": cands_s1},
+        candidate_costs_by_candidate_id=costs,
+        budget_context=BudgetContextDTO(budget_period=BudgetPeriod.DAILY, total_food_budget_idr=25000),
+    )
+
+    res = select_budget_aware_candidates(input_dto)
+    # Because slot 1 had 20 candidates and only 15 were searched, search_truncated must be True, and status SEARCH_INCOMPLETE!
+    assert res.status == BudgetSelectionStatus.SEARCH_INCOMPLETE
+    assert res.search_truncated is True
+    assert res.shortfall_idr is None
+
+
 def test_search_truncation_without_feasible_candidate_yields_search_incomplete():
     # Force search truncation by creating lots of combinations exceeding budget
     cands_s1 = [make_cand(f"c1_{i}", "slot_1") for i in range(15)]
