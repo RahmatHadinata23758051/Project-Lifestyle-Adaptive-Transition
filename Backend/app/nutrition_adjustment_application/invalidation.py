@@ -20,3 +20,16 @@ def build_downstream_invalidation(
         requires_downstream_regeneration=True,
         reason=f"Authoritative energy target updated across state revisions ({source_revision} -> {target_revision}). Downstream artifacts require regeneration.",
     )
+
+
+def is_downstream_artifact_current(
+    artifact_revision_number: int,
+    current_authoritative_revision_number: int,
+) -> bool:
+    """
+    Revision linkage invariant:
+    An artifact (meal structure, food candidate set, budget selection, daily plan preview)
+    qualifies as current IF AND ONLY IF its source nutrition revision exactly matches
+    the authoritative current nutrition revision (e.g. rev 7 != rev 8 -> stale by definition).
+    """
+    return int(artifact_revision_number) == int(current_authoritative_revision_number)

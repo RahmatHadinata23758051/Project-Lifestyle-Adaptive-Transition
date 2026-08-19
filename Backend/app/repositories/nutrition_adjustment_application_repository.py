@@ -115,7 +115,21 @@ class NutritionAdjustmentApplicationRepository:
             if not proposal_record:
                 raise ValueError("Proposal record not found for row lock.")
 
-            # 2. Insert new state revision
+            # 2. Lock latest state revision to guarantee race-safe monotonic progression
+            latest_rev_locked = (
+                db.query(NutritionStateRevisionRecord)
+                .filter(NutritionStateRevisionRecord.owner_user_id == owner_user_id)
+                .order_by(NutritionStateRevisionRecord.revision_number.desc())
+                .with_for_update()
+                .first()
+            )
+            current_rev_num = int(latest_rev_locked.revision_number) if latest_rev_locked else 1
+            if current_rev_num != int(application_dto.previous_state_revision):
+                raise ValueError(
+                    f"[{ApplicationStatus.REVISION_CONFLICT.value}] State revision was mutated concurrently (expected {application_dto.previous_state_revision}, but is now {current_rev_num})."
+                )
+
+            # 3. Insert new state revision
             applied_dt = datetime.fromisoformat(new_revision_dto.effective_from)
             if not applied_dt.tzinfo:
                 applied_dt = applied_dt.replace(tzinfo=timezone.utc)
@@ -134,7 +148,7 @@ class NutritionAdjustmentApplicationRepository:
             )
             db.add(revision_record)
 
-            # 3. Insert application record
+            # 4. Insert application record
             app_record = NutritionAdjustmentApplicationRecord(
                 id=application_dto.application_id,
                 owner_user_id=owner_user_id,
@@ -153,7 +167,7 @@ class NutritionAdjustmentApplicationRepository:
             )
             db.add(app_record)
 
-            # 4. Update proposal lifecycle state to APPLIED
+            # 5. Update proposal lifecycle state to APPLIED
             proposal_record.lifecycle_state = ProposalLifecycleState.APPLIED.value
             proposal_record.resolved_at = applied_dt
 
@@ -161,6 +175,16 @@ class NutritionAdjustmentApplicationRepository:
             db.refresh(app_record)
             return app_record
 
+        except IntegrityError as ie:
+            db.rollback()
+            err_msg = str(ie).lower()
+            if "proposal_id" in err_msg or "nutrition_adjustment_applications.proposal_id" in err_msg:
+                raise ValueError(f"[{ApplicationStatus.ALREADY_APPLIED.value}] Proposal has already been applied.")
+            if "idempotency_key" in err_msg or "uq_owner_idempotency_key" in err_msg:
+                raise ValueError(f"[{ApplicationStatus.IDEMPOTENCY_CONFLICT.value}] Idempotency key conflict.")
+            if "revision_number" in err_msg or "uq_owner_nutrition_revision" in err_msg:
+                raise ValueError(f"[{ApplicationStatus.REVISION_CONFLICT.value}] Concurrent revision insertion conflict.")
+            raise ValueError(f"[{ApplicationStatus.REVISION_CONFLICT.value}] Database integrity conflict during adjustment apply.")
         except Exception:
             db.rollback()
             raise

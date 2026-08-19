@@ -649,3 +649,54 @@ async def test_api_apply_adjustment_endpoint():
         assert len(revs_data) == 1
         assert revs_data[0]["revision_number"] == 2
         assert revs_data[0]["target_energy_kcal"] == 2400
+
+
+def test_revision_linkage_artifact_freshness_check():
+    """
+    P0 Invariant: An artifact generated under revision 7 is STALE when current revision is 8 (7 != 8).
+    Only matching revision numbers qualify as current.
+    """
+    from app.nutrition_adjustment_application.invalidation import is_downstream_artifact_current
+
+    # Revision 7 artifact against revision 8 state -> MUST BE FALSE (STALE)
+    assert is_downstream_artifact_current(artifact_revision_number=7, current_authoritative_revision_number=8) is False
+
+    # Revision 8 artifact against revision 8 state -> TRUE (CURRENT)
+    assert is_downstream_artifact_current(artifact_revision_number=8, current_authoritative_revision_number=8) is True
+
+
+def test_concurrent_revision_race_integrity_mapping():
+    """
+    If concurrent transaction modified the state revision while waiting for lock,
+    the repository raises a clear domain REVISION_CONFLICT instead of raw HTTP 500.
+    """
+    db = SessionLocal()
+    test_uid = str(uuid.uuid4())
+    try:
+        db.add(User(id=test_uid, email=f"race_{test_uid[:8]}@chronos.local"))
+        db.commit()
+
+        prop_record = _create_mock_accepted_proposal(db, test_uid)
+        cmd = ApplyNutritionAdjustmentCommand(
+            proposal_id=prop_record.id,
+            expected_current_target_kcal=2300,
+            expected_state_revision=1,  # expects 1
+            idempotency_key=f"race_key_{uuid.uuid4()}",
+        )
+
+        # Pre-seed revision 2 directly in DB with same 2300 kcal target to simulate race on revision number
+        seed_rev = NutritionStateRevisionRecord(
+            id=str(uuid.uuid4()),
+            owner_user_id=test_uid,
+            revision_number=2,
+            target_energy_kcal=2300,
+        )
+        db.add(seed_rev)
+        db.commit()
+
+        # Attempt to apply expecting revision 1 -> must raise REVISION_CONFLICT
+        with pytest.raises(ValueError, match="REVISION_CONFLICT"):
+            NutritionAdjustmentApplicationService.apply_adjustment(db, test_uid, cmd)
+    finally:
+        db.close()
+
