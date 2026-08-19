@@ -107,11 +107,23 @@ def evaluate_adaptation_decision(
         reason_codes.append(EvaluationReasonCode.WEIGHT_TREND_INDETERMINATE)
         return AdaptationDecision.NEEDS_MORE_DATA, AdjustmentReviewDomain.DATA_COLLECTION_REVIEW, reason_codes
 
+    # Check whether observation satisfies the Chronos Anti-Overreaction Policy for adjusting targets
+    is_adjustment_window_adequate = (
+        window.total_days >= AdaptationEvaluationPolicy.MIN_ADJUSTMENT_EVALUATION_DAYS
+        and window.usable_adherence_days >= AdaptationEvaluationPolicy.MIN_ADJUSTMENT_USABLE_DAYS
+        and window.weight_measurement_count >= AdaptationEvaluationPolicy.MIN_ADJUSTMENT_WEIGHT_MEASUREMENTS
+    )
+
     if trend.direction == WeightTrendDirection.STABLE:
         reason_codes.append(EvaluationReasonCode.WEIGHT_TREND_STABLE)
         if adherence.category == AdherenceContextCategory.HIGH_CONFIDENCE_ADHERENCE:
-            # High adherence + flat weight on weight gain goal -> Consider energy target review
-            return AdaptationDecision.CONSIDER_ADJUSTMENT, AdjustmentReviewDomain.ENERGY_TARGET_REVIEW, reason_codes
+            if is_adjustment_window_adequate:
+                # Adequate multi-week evidence + high adherence + flat weight -> open ENERGY_TARGET_REVIEW
+                return AdaptationDecision.CONSIDER_ADJUSTMENT, AdjustmentReviewDomain.ENERGY_TARGET_REVIEW, reason_codes
+            else:
+                # 7-13 days monitoring is sufficient for status evaluation but too short for target adaptation
+                reason_codes.append(EvaluationReasonCode.INSUFFICIENT_ADJUSTMENT_WINDOW)
+                return AdaptationDecision.CONTINUE_CURRENT_PLAN, AdjustmentReviewDomain.NONE, reason_codes
         else:
             return AdaptationDecision.HOLD_CURRENT_PLAN, AdjustmentReviewDomain.NONE, reason_codes
 
@@ -122,7 +134,11 @@ def evaluate_adaptation_decision(
     elif trend.direction == WeightTrendDirection.DECREASING:
         reason_codes.append(EvaluationReasonCode.WEIGHT_TREND_OPPOSITE_DIRECTION)
         if adherence.category == AdherenceContextCategory.HIGH_CONFIDENCE_ADHERENCE:
-            return AdaptationDecision.CONSIDER_ADJUSTMENT, AdjustmentReviewDomain.ENERGY_TARGET_REVIEW, reason_codes
+            if is_adjustment_window_adequate:
+                return AdaptationDecision.CONSIDER_ADJUSTMENT, AdjustmentReviewDomain.ENERGY_TARGET_REVIEW, reason_codes
+            else:
+                reason_codes.append(EvaluationReasonCode.INSUFFICIENT_ADJUSTMENT_WINDOW)
+                return AdaptationDecision.CONTINUE_CURRENT_PLAN, AdjustmentReviewDomain.NONE, reason_codes
         else:
             return AdaptationDecision.HOLD_CURRENT_PLAN, AdjustmentReviewDomain.NONE, reason_codes
 

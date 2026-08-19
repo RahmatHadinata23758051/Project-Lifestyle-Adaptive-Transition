@@ -49,6 +49,12 @@ def generate_adaptation_explanations(
     if EvaluationReasonCode.ADAPTATION_COOLDOWN_ACTIVE in reason_codes:
         explanations.append("Adaptation review cooldown is active to prevent rapid target oscillation.")
 
+    if EvaluationReasonCode.INSUFFICIENT_ADJUSTMENT_WINDOW in reason_codes:
+        explanations.append("Observation period is sufficient for plan monitoring, but multi-week evidence (>= 14 days) is required before altering calorie targets.")
+
+    if EvaluationReasonCode.INCONSISTENT_MEASUREMENT_CONTEXT in reason_codes:
+        explanations.append("Weight measurement conditions (e.g., morning wake vs post-meal) were inconsistent, reducing trend confidence.")
+
     if not explanations:
         explanations.append("Current plan is usable and supported by available evidence.")
 

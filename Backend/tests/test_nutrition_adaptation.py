@@ -32,6 +32,7 @@ from app.nutrition_adherence.constants import (
 from app.daily_nutrition_plan.constants import MacroCompleteness, DailyPlanStatus
 from app.meal_structure.constants import MealStructureState
 from app.nutrition_adaptation.evaluator import evaluate_nutrition_adaptation
+from app.nutrition_adaptation.weight_trend import evaluate_weight_trend
 from app.repositories.nutrition_adaptation_repository import NutritionAdaptationRepository
 from app.services.nutrition_adaptation_service import NutritionAdaptationService
 
@@ -182,6 +183,72 @@ def test_progressing_trend_with_high_adherence_continues():
     assert result.review_domain == AdjustmentReviewDomain.NONE
     assert result.weight_trend.direction == WeightTrendDirection.INCREASING
     assert EvaluationReasonCode.WEIGHT_TREND_EXPECTED_DIRECTION in result.reason_codes
+
+
+def test_short_7_day_window_flat_trend_does_not_prematurely_adjust():
+    """
+    7-10 days flat trend with high adherence is sufficient for status monitoring,
+    but does NOT prematurely open CONSIDER_ADJUSTMENT under Chronos Anti-Overreaction Policy.
+    """
+    days = _generate_mock_days(8, reporting=ReportingCompleteness.COMPLETE, nutrition_comp=MacroCompleteness.COMPLETE)
+    weights = _generate_mock_weights(4, start_kg=60.0, step_kg=0.0)
+
+    input_dto = NutritionAdaptationEvaluationInputDTO(
+        user_id="u1",
+        nutrition_goal_type="NUTRITION_WEIGHT_GAIN",
+        target_energy_kcal=2300.0,
+        evidence_days=days,
+        weight_measurements=weights,
+    )
+
+    result = evaluate_nutrition_adaptation(input_dto)
+    assert result.decision == AdaptationDecision.CONTINUE_CURRENT_PLAN
+    assert result.review_domain == AdjustmentReviewDomain.NONE
+    assert EvaluationReasonCode.INSUFFICIENT_ADJUSTMENT_WINDOW in result.reason_codes
+    assert EvaluationReasonCode.WEIGHT_TREND_STABLE in result.reason_codes
+
+
+def test_inconsistent_measurement_context_downgrades_confidence():
+    """
+    Mixed / inconsistent measurement contexts (wake morning vs late night) downgrade trend confidence.
+    """
+    weights = [
+        WeightObservationDTO(measured_at="2026-08-01T07:00:00Z", weight_kg=60.0, context="WAKE_MORNING"),
+        WeightObservationDTO(measured_at="2026-08-03T22:30:00Z", weight_kg=60.8, context="POST_MEAL_NIGHT"),
+        WeightObservationDTO(measured_at="2026-08-05T07:00:00Z", weight_kg=60.1, context="WAKE_MORNING"),
+        WeightObservationDTO(measured_at="2026-08-07T22:00:00Z", weight_kg=60.9, context="POST_MEAL_NIGHT"),
+    ]
+
+    days = _generate_mock_days(14, reporting=ReportingCompleteness.COMPLETE, nutrition_comp=MacroCompleteness.COMPLETE)
+    input_dto = NutritionAdaptationEvaluationInputDTO(
+        user_id="u1",
+        nutrition_goal_type="NUTRITION_WEIGHT_GAIN",
+        target_energy_kcal=2300.0,
+        evidence_days=days,
+        weight_measurements=weights,
+    )
+
+    result = evaluate_nutrition_adaptation(input_dto)
+    # Because of alternating context, confidence is downgraded or not high
+    assert result.weight_trend.confidence in (EvaluationConfidence.MEDIUM, EvaluationConfidence.LOW)
+
+
+def test_residual_outlier_detection_gap_aware():
+    """
+    Residual-based outlier detection flags severe fitted deviation without crude time-division flaws.
+    """
+    # 5 points, one extreme 5kg spike that deviates from line
+    weights = [
+        WeightObservationDTO(measured_at="2026-08-01T07:00:00Z", weight_kg=60.0),
+        WeightObservationDTO(measured_at="2026-08-04T07:00:00Z", weight_kg=60.1),
+        WeightObservationDTO(measured_at="2026-08-07T07:00:00Z", weight_kg=65.5),  # 5.4 kg spike outlier
+        WeightObservationDTO(measured_at="2026-08-10T07:00:00Z", weight_kg=60.2),
+        WeightObservationDTO(measured_at="2026-08-14T07:00:00Z", weight_kg=60.3),
+    ]
+
+    trend = evaluate_weight_trend(weights)
+    assert trend.outlier_count >= 1
+    assert trend.confidence != EvaluationConfidence.HIGH
 
 
 def test_budget_friction_pattern_triggers_budget_review():
