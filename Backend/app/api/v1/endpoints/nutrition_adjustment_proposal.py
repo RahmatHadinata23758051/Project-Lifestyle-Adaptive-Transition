@@ -171,3 +171,45 @@ def reject_adjustment_proposal(
         return updated
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+from app.schemas.nutrition_adjustment_application import (
+    ApplyNutritionAdjustmentRequest,
+    NutritionAdjustmentApplicationResponse,
+)
+from app.nutrition_adjustment_application.models import (
+    ApplyNutritionAdjustmentCommand,
+)
+from app.services.nutrition_adjustment_application_service import (
+    NutritionAdjustmentApplicationService,
+)
+
+
+@router.post("/{proposal_id}/apply", response_model=NutritionAdjustmentApplicationResponse)
+def apply_adjustment_proposal(
+    proposal_id: str,
+    request: ApplyNutritionAdjustmentRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    command = ApplyNutritionAdjustmentCommand(
+        proposal_id=proposal_id,
+        expected_current_target_kcal=request.expected_current_target_kcal,
+        expected_state_revision=request.expected_state_revision,
+        idempotency_key=request.idempotency_key,
+        reference_time=request.reference_time,
+    )
+    try:
+        result = NutritionAdjustmentApplicationService.apply_adjustment(
+            db=db,
+            owner_user_id=current_user.id,
+            command=command,
+            current_eligibility_status=request.current_eligibility_status or "ELIGIBLE",
+            last_evidence_updated_at=request.last_evidence_updated_at,
+        )
+        return result
+    except ValueError as e:
+        err_str = str(e)
+        if "not found" in err_str.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err_str)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_str)

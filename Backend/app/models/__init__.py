@@ -37,6 +37,8 @@ from app.models.nutrition_adherence import (
 )
 from app.models.nutrition_adaptation import NutritionAdaptationEvaluationRecord
 from app.models.nutrition_adjustment_proposal import NutritionAdjustmentProposalRecord
+from app.models.nutrition_state_revision import NutritionStateRevisionRecord
+from app.models.nutrition_adjustment_application import NutritionAdjustmentApplicationRecord
 
 __all__ = [
     "User",

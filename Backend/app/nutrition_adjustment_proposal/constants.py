@@ -17,6 +17,7 @@ class ProposalStatus(str, Enum):
 class ProposalLifecycleState(str, Enum):
     PENDING = "PENDING"
     ACCEPTED = "ACCEPTED"
+    APPLIED = "APPLIED"
     REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"
     SUPERSEDED = "SUPERSEDED"
