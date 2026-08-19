@@ -38,6 +38,9 @@ from app.nutrition_adjustment_proposal.models import (
 from app.services.nutrition_adjustment_application_service import (
     NutritionAdjustmentApplicationService,
 )
+from app.repositories.nutrition_adjustment_application_repository import (
+    NutritionAdjustmentApplicationRepository,
+)
 
 init_db()
 
@@ -699,4 +702,80 @@ def test_concurrent_revision_race_integrity_mapping():
             NutritionAdjustmentApplicationService.apply_adjustment(db, test_uid, cmd)
     finally:
         db.close()
+
+
+def test_accepted_but_expired_proposal_cannot_be_applied():
+    """
+    User requirement:
+    Proposal was ACCEPTED within 48h, but /apply is called after expires_at.
+    Must reject with PROPOSAL_EXPIRED:
+    - Current target unchanged
+    - Current revision unchanged
+    - Proposal remains non-APPLIED
+    - No application row
+    - No downstream revision change
+    """
+    db = SessionLocal()
+    test_uid = str(uuid.uuid4())
+    try:
+        db.add(User(id=test_uid, email=f"expired_apply_{test_uid[:8]}@chronos.local"))
+        db.commit()
+
+        # Day 1: Created at 09:00, expires at Day 3 09:00 (+48h)
+        created_dt = datetime(2026, 8, 1, 9, 0, 0, tzinfo=timezone.utc)
+        expires_dt = datetime(2026, 8, 3, 9, 0, 0, tzinfo=timezone.utc)
+
+        # User ACCEPTED on Day 1 10:00
+        prop_record = _create_mock_accepted_proposal(
+            db,
+            owner_user_id=test_uid,
+            current_target_kcal=2300,
+            proposed_target_kcal=2400,
+            delta_kcal=100,
+            lifecycle_state=ProposalLifecycleState.ACCEPTED,
+            created_at_dt=created_dt,
+            expires_at_dt=expires_dt,
+        )
+        prop_id = prop_record.id
+
+        # Day 4: /apply called at 08:00 (reference_time > expires_at)
+        apply_time_str = "2026-08-04T08:00:00Z"
+        cmd = ApplyNutritionAdjustmentCommand(
+            proposal_id=prop_id,
+            expected_current_target_kcal=2300,
+            expected_state_revision=1,
+            idempotency_key=f"key_{uuid.uuid4()}",
+            reference_time=apply_time_str,
+        )
+
+        with pytest.raises(ValueError, match="PROPOSAL_EXPIRED"):
+            NutritionAdjustmentApplicationService.apply_adjustment(db, test_uid, cmd)
+
+        # Verify DB state invariants:
+        # 1. Proposal remains non-APPLIED (still ACCEPTED)
+        prop_after = db.query(NutritionAdjustmentProposalRecord).filter_by(id=prop_id).first()
+        assert prop_after.lifecycle_state == ProposalLifecycleState.ACCEPTED.value
+
+        # 2. No application row was created
+        app_rows = (
+            db.query(NutritionAdjustmentApplicationRecord)
+            .filter_by(owner_user_id=test_uid)
+            .all()
+        )
+        assert len(app_rows) == 0
+
+        # 3. No new state revision was created
+        rev_rows = (
+            db.query(NutritionStateRevisionRecord)
+            .filter_by(owner_user_id=test_uid)
+            .all()
+        )
+        assert len(rev_rows) == 0
+
+        # 4. Authoritative target remains unchanged (2300 kcal)
+        latest_rev = NutritionAdjustmentApplicationRepository.get_latest_state_revision(db, test_uid)
+        assert latest_rev is None  # no new revision, baseline 2300 untouched
+    finally:
+        db.close()
+
 

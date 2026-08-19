@@ -33,3 +33,20 @@ def is_downstream_artifact_current(
     the authoritative current nutrition revision (e.g. rev 7 != rev 8 -> stale by definition).
     """
     return int(artifact_revision_number) == int(current_authoritative_revision_number)
+
+
+def evaluate_artifact_freshness(
+    artifact_revision_number: int,
+    current_authoritative_revision_number: int,
+) -> dict:
+    """
+    Evaluates whether an artifact is current or stale.
+    Artifact qualifies as CURRENT iff its source revision matches the authoritative revision.
+    """
+    is_current = is_downstream_artifact_current(artifact_revision_number, current_authoritative_revision_number)
+    return {
+        "is_current": is_current,
+        "status": "CURRENT" if is_current else "STALE",
+        "artifact_revision": int(artifact_revision_number),
+        "current_revision": int(current_authoritative_revision_number),
+    }

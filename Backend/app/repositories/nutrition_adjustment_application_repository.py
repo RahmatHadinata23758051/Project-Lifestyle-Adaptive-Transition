@@ -115,6 +115,17 @@ class NutritionAdjustmentApplicationRepository:
             if not proposal_record:
                 raise ValueError("Proposal record not found for row lock.")
 
+            # Check apply-time proposal expiry under row lock
+            applied_dt = datetime.fromisoformat(new_revision_dto.effective_from) if new_revision_dto.effective_from else datetime.now(timezone.utc)
+            if not applied_dt.tzinfo:
+                applied_dt = applied_dt.replace(tzinfo=timezone.utc)
+            if proposal_record.expires_at:
+                exp_dt = proposal_record.expires_at
+                if not exp_dt.tzinfo:
+                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                if applied_dt > exp_dt:
+                    raise ValueError(f"[{ApplicationStatus.PROPOSAL_EXPIRED.value}] Proposal validity window has expired before application.")
+
             # 2. Lock latest state revision to guarantee race-safe monotonic progression
             latest_rev_locked = (
                 db.query(NutritionStateRevisionRecord)
