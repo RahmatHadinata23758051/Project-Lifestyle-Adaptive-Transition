@@ -25,25 +25,33 @@ class NutritionAdjustmentProposalRepository:
         except Exception:
             expires_dt = datetime.now(timezone.utc)
 
-        # Supersede any existing pending proposals for this user to preserve invariant: one pending proposal per user
-        db.query(NutritionAdjustmentProposalRecord).filter(
-            NutritionAdjustmentProposalRecord.owner_user_id == owner_user_id,
-            NutritionAdjustmentProposalRecord.lifecycle_state == ProposalLifecycleState.PENDING.value,
-        ).update(
-            {"lifecycle_state": ProposalLifecycleState.SUPERSEDED.value, "resolved_at": created_dt},
-            synchronize_session=False,
+        # Atomic supersession with row-level locking to prevent race conditions
+        pending_proposals = (
+            db.query(NutritionAdjustmentProposalRecord)
+            .filter(
+                NutritionAdjustmentProposalRecord.owner_user_id == owner_user_id,
+                NutritionAdjustmentProposalRecord.proposal_domain == proposal.proposal_domain,
+                NutritionAdjustmentProposalRecord.lifecycle_state == ProposalLifecycleState.PENDING.value,
+            )
+            .with_for_update()
+            .all()
         )
+        for p in pending_proposals:
+            p.lifecycle_state = ProposalLifecycleState.SUPERSEDED.value
+            p.resolved_at = created_dt
+        db.flush()
 
         record = NutritionAdjustmentProposalRecord(
             id=prop_id,
             owner_user_id=owner_user_id,
+            proposal_domain=proposal.proposal_domain,
             evaluation_id=proposal.evidence_summary.evaluation_id,
             status=proposal.status.value if hasattr(proposal.status, "value") else str(proposal.status),
             lifecycle_state=proposal.lifecycle_state.value if hasattr(proposal.lifecycle_state, "value") else str(proposal.lifecycle_state),
             proposal_type=proposal.proposal_type.value if hasattr(proposal.proposal_type, "value") else str(proposal.proposal_type),
-            current_target_kcal=proposal.current_target_kcal,
-            proposed_target_kcal=proposal.proposed_target_kcal,
-            delta_kcal=proposal.delta_kcal,
+            current_target_kcal=int(proposal.current_target_kcal),
+            proposed_target_kcal=int(proposal.proposed_target_kcal),
+            delta_kcal=int(proposal.delta_kcal),
             confidence=proposal.confidence.value if hasattr(proposal.confidence, "value") else str(proposal.confidence),
             fingerprint=proposal.fingerprint,
             evidence_snapshot=proposal.evidence_summary.model_dump(),
@@ -78,11 +86,13 @@ class NutritionAdjustmentProposalRepository:
     def get_active_pending_proposal(
         db: Session,
         owner_user_id: str,
+        proposal_domain: str = "ENERGY_TARGET",
     ) -> Optional[NutritionAdjustmentProposalRecord]:
         return (
             db.query(NutritionAdjustmentProposalRecord)
             .filter(
                 NutritionAdjustmentProposalRecord.owner_user_id == owner_user_id,
+                NutritionAdjustmentProposalRecord.proposal_domain == proposal_domain,
                 NutritionAdjustmentProposalRecord.lifecycle_state == ProposalLifecycleState.PENDING.value,
             )
             .order_by(NutritionAdjustmentProposalRecord.created_at.desc())

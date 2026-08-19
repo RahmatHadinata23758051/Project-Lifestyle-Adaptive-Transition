@@ -34,14 +34,20 @@ class EvidenceSnapshotResponse(BaseModel):
 
 class NutritionAdjustmentProposalRequest(BaseModel):
     evaluation: NutritionAdaptationEvaluationResponse
-    current_target_energy_kcal: float
-    initial_baseline_target_energy_kcal: Optional[float] = None
-    cumulative_adaptive_adjustment_kcal: float = 0.0
+    current_target_energy_kcal: int
+    initial_baseline_target_energy_kcal: Optional[int] = None
+    cumulative_adaptive_adjustment_kcal: int = 0
     nutrition_goal_type: str = "NUTRITION_WEIGHT_GAIN"
     current_eligibility_status: str = "ELIGIBLE"
     last_applied_adjustment_at: Optional[str] = None
     last_evidence_updated_at: Optional[str] = None
     reference_time: Optional[str] = None
+
+
+class AcceptProposalRequest(BaseModel):
+    current_target_energy_kcal: Optional[int] = None
+    current_eligibility_status: Optional[str] = None
+    last_evidence_updated_at: Optional[str] = None
 
 
 class RejectProposalRequest(BaseModel):
@@ -50,12 +56,13 @@ class RejectProposalRequest(BaseModel):
 
 class NutritionAdjustmentProposalResponse(BaseModel):
     proposal_id: str
+    proposal_domain: str = "ENERGY_TARGET"
     status: ProposalStatus
     lifecycle_state: ProposalLifecycleState
     proposal_type: ProposalType
-    current_target_kcal: float
-    proposed_target_kcal: float
-    delta_kcal: float
+    current_target_kcal: int
+    proposed_target_kcal: int
+    delta_kcal: int
     confidence: EvaluationConfidence
     evidence_summary: Optional[Union[EvidenceSnapshotResponse, Dict[str, Any]]] = None
     risk_flags: List[RiskFlag] = []

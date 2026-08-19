@@ -6,8 +6,10 @@ from httpx import AsyncClient, ASGITransport
 
 from app.main import app
 from app.core.config import settings
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, init_db
 from app.models.user import User
+
+init_db()
 from app.nutrition_adjustment_proposal.constants import (
     ProposalStatus,
     ProposalLifecycleState,
@@ -38,6 +40,8 @@ from app.nutrition_adaptation.models import (
     WeightTrendSummaryDTO,
     ReasonPatternSummaryDTO,
 )
+from app.repositories.nutrition_adjustment_proposal_repository import NutritionAdjustmentProposalRepository
+from app.services.nutrition_adjustment_proposal_service import NutritionAdjustmentProposalService
 
 
 def create_mock_jwt(user_id: str, email: str, secret: str = settings.SUPABASE_JWT_SECRET) -> str:
@@ -114,12 +118,12 @@ def test_wrong_p1_7_decision_returns_no_proposal_needed():
     eval_res = _build_mock_evaluation(decision=AdaptationDecision.CONTINUE_CURRENT_PLAN)
     input_dto = NutritionAdjustmentProposalInputDTO(
         evaluation=eval_res,
-        current_target_energy_kcal=2300.0,
+        current_target_energy_kcal=2300,
     )
     proposal = build_nutrition_adjustment_proposal(input_dto)
     assert proposal.status == ProposalStatus.NO_PROPOSAL_NEEDED
-    assert proposal.delta_kcal == 0.0
-    assert proposal.proposed_target_kcal == 2300.0
+    assert proposal.delta_kcal == 0
+    assert proposal.proposed_target_kcal == 2300
 
 
 def test_wrong_review_domain_returns_unsupported_review_domain():
@@ -132,10 +136,10 @@ def test_wrong_review_domain_returns_unsupported_review_domain():
     )
     input_dto = NutritionAdjustmentProposalInputDTO(
         evaluation=eval_res,
-        current_target_energy_kcal=2300.0,
+        current_target_energy_kcal=2300,
     )
     proposal = build_nutrition_adjustment_proposal(input_dto)
-    assert proposal.status == ProposalStatus.NO_PROPOSAL_NEEDED or proposal.status == ProposalStatus.UNSUPPORTED_REVIEW_DOMAIN
+    assert proposal.status in (ProposalStatus.NO_PROPOSAL_NEEDED, ProposalStatus.UNSUPPORTED_REVIEW_DOMAIN)
 
 
 def test_low_weight_trend_confidence_blocks_proposal():
@@ -145,7 +149,7 @@ def test_low_weight_trend_confidence_blocks_proposal():
     eval_res = _build_mock_evaluation(trend_confidence=EvaluationConfidence.LOW)
     input_dto = NutritionAdjustmentProposalInputDTO(
         evaluation=eval_res,
-        current_target_energy_kcal=2300.0,
+        current_target_energy_kcal=2300,
     )
     proposal = build_nutrition_adjustment_proposal(input_dto)
     assert proposal.status == ProposalStatus.BLOCKED_BY_CONFIDENCE
@@ -160,7 +164,7 @@ def test_uninterpretable_weight_trend_blocks_proposal():
     eval_res = _build_mock_evaluation(is_interpretable=False)
     input_dto = NutritionAdjustmentProposalInputDTO(
         evaluation=eval_res,
-        current_target_energy_kcal=2300.0,
+        current_target_energy_kcal=2300,
     )
     proposal = build_nutrition_adjustment_proposal(input_dto)
     assert proposal.status == ProposalStatus.BLOCKED_BY_CONFIDENCE
@@ -173,7 +177,7 @@ def test_insufficient_data_returns_needs_more_data():
     eval_res = _build_mock_evaluation(sufficiency_status=DataSufficiencyStatus.INSUFFICIENT)
     input_dto = NutritionAdjustmentProposalInputDTO(
         evaluation=eval_res,
-        current_target_energy_kcal=2300.0,
+        current_target_energy_kcal=2300,
     )
     proposal = build_nutrition_adjustment_proposal(input_dto)
     assert proposal.status == ProposalStatus.NEEDS_MORE_DATA
@@ -186,7 +190,7 @@ def test_ineligible_safety_status_blocks_proposal():
     eval_res = _build_mock_evaluation()
     input_dto = NutritionAdjustmentProposalInputDTO(
         evaluation=eval_res,
-        current_target_energy_kcal=2300.0,
+        current_target_energy_kcal=2300,
         current_eligibility_status="OUT_OF_SCOPE",
     )
     proposal = build_nutrition_adjustment_proposal(input_dto)
@@ -201,7 +205,7 @@ def test_unsupported_goal_blocks_proposal():
     eval_res = _build_mock_evaluation()
     input_dto = NutritionAdjustmentProposalInputDTO(
         evaluation=eval_res,
-        current_target_energy_kcal=2300.0,
+        current_target_energy_kcal=2300,
         nutrition_goal_type="NUTRITION_WEIGHT_LOSS",
     )
     proposal = build_nutrition_adjustment_proposal(input_dto)
@@ -216,7 +220,7 @@ def test_new_evidence_invalidates_evaluation_needs_new_evaluation():
     eval_res = _build_mock_evaluation(evaluated_at="2026-08-19T10:00:00Z")
     input_dto = NutritionAdjustmentProposalInputDTO(
         evaluation=eval_res,
-        current_target_energy_kcal=2300.0,
+        current_target_energy_kcal=2300,
         last_evidence_updated_at="2026-08-19T11:30:00Z",  # newer than evaluation
     )
     proposal = build_nutrition_adjustment_proposal(input_dto)
@@ -233,15 +237,15 @@ def test_supported_ready_proposal_generation():
     eval_res = _build_mock_evaluation()
     input_dto = NutritionAdjustmentProposalInputDTO(
         evaluation=eval_res,
-        current_target_energy_kcal=2300.0,
+        current_target_energy_kcal=2300,
         reference_time="2026-08-19T10:00:00Z",
     )
     proposal = build_nutrition_adjustment_proposal(input_dto)
     assert proposal.status == ProposalStatus.PROPOSAL_READY
     assert proposal.proposal_type == ProposalType.ENERGY_TARGET_INCREASE
-    assert proposal.current_target_kcal == 2300.0
-    assert proposal.proposed_target_kcal == 2400.0
-    assert proposal.delta_kcal == 100.0
+    assert proposal.current_target_kcal == 2300
+    assert proposal.proposed_target_kcal == 2400
+    assert proposal.delta_kcal == 100
     assert proposal.requires_user_confirmation is True
     assert proposal.downstream_budget_recheck_required is True
     assert len(proposal.fingerprint) == 64
@@ -256,13 +260,13 @@ def test_cumulative_limit_guardrail():
     eval_res = _build_mock_evaluation()
     input_dto = NutritionAdjustmentProposalInputDTO(
         evaluation=eval_res,
-        current_target_energy_kcal=2700.0,
-        cumulative_adaptive_adjustment_kcal=400.0,
+        current_target_energy_kcal=2700,
+        cumulative_adaptive_adjustment_kcal=400,
     )
     proposal = build_nutrition_adjustment_proposal(input_dto)
     assert proposal.status == ProposalStatus.ADAPTIVE_LIMIT_REACHED
-    assert proposal.delta_kcal == 0.0
-    assert proposal.proposed_target_kcal == 2700.0
+    assert proposal.delta_kcal == 0
+    assert proposal.proposed_target_kcal == 2700
     assert AdjustmentProposalReasonCode.ADAPTIVE_LIMIT_REACHED in proposal.reason_codes
 
 
@@ -273,7 +277,7 @@ def test_proposal_determinism_and_fingerprint():
     eval_res = _build_mock_evaluation()
     input_dto = NutritionAdjustmentProposalInputDTO(
         evaluation=eval_res,
-        current_target_energy_kcal=2300.0,
+        current_target_energy_kcal=2300,
         reference_time="2026-08-19T10:00:00Z",
     )
     p1 = build_nutrition_adjustment_proposal(input_dto)
@@ -283,6 +287,80 @@ def test_proposal_determinism_and_fingerprint():
     assert p1.proposed_target_kcal == p2.proposed_target_kcal
     assert p1.delta_kcal == p2.delta_kcal
     assert p1.status == p2.status
+
+
+def test_accept_proposal_revalidates_latest_eligibility_and_evidence_watermark():
+    """
+    Revalidation on accept: rejecting acceptance if eligibility changed or new data arrived.
+    """
+    db = SessionLocal()
+    test_uid = f"user_accept_reval_{uuid.uuid4()}"
+    try:
+        db.add(User(id=test_uid, email=f"{test_uid}@chronos.local"))
+        db.commit()
+
+        eval_res = _build_mock_evaluation()
+        input_dto = NutritionAdjustmentProposalInputDTO(
+            user_id=test_uid,
+            evaluation=eval_res,
+            current_target_energy_kcal=2300,
+            reference_time="2026-08-19T10:00:00Z",
+        )
+        proposal = NutritionAdjustmentProposalService.create_proposal(db, test_uid, input_dto)
+
+        # 1. Attempt accept with OUT_OF_SCOPE eligibility -> must fail
+        with pytest.raises(ValueError, match="Latest nutrition eligibility is not valid"):
+            NutritionAdjustmentProposalService.accept_proposal(
+                db,
+                proposal.proposal_id,
+                test_uid,
+                current_eligibility_status="OUT_OF_SCOPE",
+            )
+
+        # Re-create a fresh proposal for watermark test
+        proposal2 = NutritionAdjustmentProposalService.create_proposal(db, test_uid, input_dto)
+
+        # 2. Attempt accept with new evidence timestamp newer than proposal created_at -> must fail
+        newer_evid = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        with pytest.raises(ValueError, match="New check-in or weight evidence was logged"):
+            NutritionAdjustmentProposalService.accept_proposal(
+                db,
+                proposal2.proposal_id,
+                test_uid,
+                last_evidence_updated_at=newer_evid,
+            )
+    finally:
+        db.close()
+
+
+def test_accept_proposal_revalidates_current_target_mismatch():
+    """
+    If current target changed in backend before accepting, proposal is detected as stale.
+    """
+    db = SessionLocal()
+    test_uid = f"user_accept_stale_{uuid.uuid4()}"
+    try:
+        db.add(User(id=test_uid, email=f"{test_uid}@chronos.local"))
+        db.commit()
+
+        eval_res = _build_mock_evaluation()
+        input_dto = NutritionAdjustmentProposalInputDTO(
+            user_id=test_uid,
+            evaluation=eval_res,
+            current_target_energy_kcal=2300,
+            reference_time="2026-08-19T10:00:00Z",
+        )
+        proposal = NutritionAdjustmentProposalService.create_proposal(db, test_uid, input_dto)
+
+        with pytest.raises(ValueError, match="Authoritative current energy target has changed"):
+            NutritionAdjustmentProposalService.accept_proposal(
+                db,
+                proposal.proposal_id,
+                test_uid,
+                current_target_energy_kcal=2450,  # mismatch with 2300
+            )
+    finally:
+        db.close()
 
 
 @pytest.mark.asyncio
@@ -308,8 +386,8 @@ async def test_api_adjustment_proposal_preview_and_lifecycle():
 
         payload = {
             "evaluation": eval_mock,
-            "current_target_energy_kcal": 2300.0,
-            "cumulative_adaptive_adjustment_kcal": 0.0,
+            "current_target_energy_kcal": 2300,
+            "cumulative_adaptive_adjustment_kcal": 0,
             "nutrition_goal_type": "NUTRITION_WEIGHT_GAIN",
             "current_eligibility_status": "ELIGIBLE",
             "reference_time": "2026-08-19T10:00:00Z",
@@ -320,8 +398,8 @@ async def test_api_adjustment_proposal_preview_and_lifecycle():
         assert preview_res.status_code == 200
         p_data = preview_res.json()
         assert p_data["status"] == "PROPOSAL_READY"
-        assert p_data["proposed_target_kcal"] == 2400.0
-        assert p_data["delta_kcal"] == 100.0
+        assert p_data["proposed_target_kcal"] == 2400
+        assert p_data["delta_kcal"] == 100
 
         # 2. Create proposal 1
         create_res1 = await client.post("/api/v1/nutrition-adjustments/proposals", json=payload, headers=headers)
@@ -342,11 +420,23 @@ async def test_api_adjustment_proposal_preview_and_lifecycle():
         assert get_p1.status_code == 200
         assert get_p1.json()["lifecycle_state"] == "SUPERSEDED"
 
-        # 4. Accept proposal 2
-        accept_res = await client.post(f"/api/v1/nutrition-adjustments/proposals/{prop2_id}/accept", headers=headers)
+        # 4. Accept proposal 2 with valid parameters
+        accept_payload = {
+            "current_target_energy_kcal": 2300,
+            "current_eligibility_status": "ELIGIBLE",
+        }
+        accept_res = await client.post(
+            f"/api/v1/nutrition-adjustments/proposals/{prop2_id}/accept",
+            json=accept_payload,
+            headers=headers,
+        )
         assert accept_res.status_code == 200
         assert accept_res.json()["lifecycle_state"] == "ACCEPTED"
 
         # Verify cannot re-accept already accepted proposal
-        re_accept = await client.post(f"/api/v1/nutrition-adjustments/proposals/{prop2_id}/accept", headers=headers)
+        re_accept = await client.post(
+            f"/api/v1/nutrition-adjustments/proposals/{prop2_id}/accept",
+            json=accept_payload,
+            headers=headers,
+        )
         assert re_accept.status_code == 400

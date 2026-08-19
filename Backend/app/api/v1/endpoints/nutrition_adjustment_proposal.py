@@ -5,6 +5,7 @@ from app.db.session import get_db
 from app.core.auth import get_current_user, AuthenticatedUser
 from app.schemas.nutrition_adjustment_proposal import (
     NutritionAdjustmentProposalRequest,
+    AcceptProposalRequest,
     RejectProposalRequest,
     NutritionAdjustmentProposalResponse,
 )
@@ -136,11 +137,22 @@ def get_adjustment_proposal(
 @router.post("/{proposal_id}/accept", response_model=NutritionAdjustmentProposalResponse)
 def accept_adjustment_proposal(
     proposal_id: str,
+    request: Optional[AcceptProposalRequest] = None,
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
+    current_target = request.current_target_energy_kcal if request else None
+    current_elig = request.current_eligibility_status if request else None
+    last_evid = request.last_evidence_updated_at if request else None
     try:
-        updated = NutritionAdjustmentProposalService.accept_proposal(db, proposal_id, current_user.id)
+        updated = NutritionAdjustmentProposalService.accept_proposal(
+            db,
+            proposal_id,
+            current_user.id,
+            current_target_energy_kcal=current_target,
+            current_eligibility_status=current_elig,
+            last_evidence_updated_at=last_evid,
+        )
         return updated
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

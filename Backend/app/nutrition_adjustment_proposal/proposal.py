@@ -44,6 +44,7 @@ def build_nutrition_adjustment_proposal(
     Does NOT mutate user state or authoritative targets.
     """
     eval_res = input_dto.evaluation
+    current_target = int(input_dto.current_target_energy_kcal)
 
     # Build immutable evidence snapshot
     evidence_snapshot = EvidenceSnapshotDTO(
@@ -77,25 +78,26 @@ def build_nutrition_adjustment_proposal(
     if elig_status is not None:
         fp = generate_proposal_fingerprint(
             eval_res.evaluation_id,
-            input_dto.current_target_energy_kcal,
-            input_dto.current_target_energy_kcal,
-            0.0,
+            current_target,
+            current_target,
+            0,
         )
         exps = generate_proposal_explanations(
             elig_status,
-            input_dto.current_target_energy_kcal,
-            input_dto.current_target_energy_kcal,
-            0.0,
+            current_target,
+            current_target,
+            0,
             elig_reasons,
         )
         return NutritionAdjustmentProposalDTO(
             proposal_id=f"prop_{uuid.uuid4().hex[:16]}",
+            proposal_domain="ENERGY_TARGET",
             status=elig_status,
             lifecycle_state=ProposalLifecycleState.PENDING,
             proposal_type=ProposalType.HOLD_CURRENT_TARGET,
-            current_target_kcal=round(input_dto.current_target_energy_kcal, 1),
-            proposed_target_kcal=round(input_dto.current_target_energy_kcal, 1),
-            delta_kcal=0.0,
+            current_target_kcal=current_target,
+            proposed_target_kcal=current_target,
+            delta_kcal=0,
             confidence=eval_res.confidence,
             evidence_summary=evidence_snapshot,
             risk_flags=[],
@@ -111,25 +113,26 @@ def build_nutrition_adjustment_proposal(
     if conf_status is not None:
         fp = generate_proposal_fingerprint(
             eval_res.evaluation_id,
-            input_dto.current_target_energy_kcal,
-            input_dto.current_target_energy_kcal,
-            0.0,
+            current_target,
+            current_target,
+            0,
         )
         exps = generate_proposal_explanations(
             conf_status,
-            input_dto.current_target_energy_kcal,
-            input_dto.current_target_energy_kcal,
-            0.0,
+            current_target,
+            current_target,
+            0,
             conf_reasons,
         )
         return NutritionAdjustmentProposalDTO(
             proposal_id=f"prop_{uuid.uuid4().hex[:16]}",
+            proposal_domain="ENERGY_TARGET",
             status=conf_status,
             lifecycle_state=ProposalLifecycleState.PENDING,
             proposal_type=ProposalType.HOLD_CURRENT_TARGET,
-            current_target_kcal=round(input_dto.current_target_energy_kcal, 1),
-            proposed_target_kcal=round(input_dto.current_target_energy_kcal, 1),
-            delta_kcal=0.0,
+            current_target_kcal=current_target,
+            proposed_target_kcal=current_target,
+            delta_kcal=0,
             confidence=eval_res.confidence,
             evidence_summary=evidence_snapshot,
             risk_flags=conf_risks,
@@ -150,25 +153,26 @@ def build_nutrition_adjustment_proposal(
     if fresh_status is not None:
         fp = generate_proposal_fingerprint(
             eval_res.evaluation_id,
-            input_dto.current_target_energy_kcal,
-            input_dto.current_target_energy_kcal,
-            0.0,
+            current_target,
+            current_target,
+            0,
         )
         exps = generate_proposal_explanations(
             fresh_status,
-            input_dto.current_target_energy_kcal,
-            input_dto.current_target_energy_kcal,
-            0.0,
+            current_target,
+            current_target,
+            0,
             fresh_reasons,
         )
         return NutritionAdjustmentProposalDTO(
             proposal_id=f"prop_{uuid.uuid4().hex[:16]}",
+            proposal_domain="ENERGY_TARGET",
             status=fresh_status,
             lifecycle_state=ProposalLifecycleState.PENDING,
             proposal_type=ProposalType.HOLD_CURRENT_TARGET,
-            current_target_kcal=round(input_dto.current_target_energy_kcal, 1),
-            proposed_target_kcal=round(input_dto.current_target_energy_kcal, 1),
-            delta_kcal=0.0,
+            current_target_kcal=current_target,
+            proposed_target_kcal=current_target,
+            delta_kcal=0,
             confidence=eval_res.confidence,
             evidence_summary=evidence_snapshot,
             risk_flags=fresh_risks,
@@ -181,7 +185,7 @@ def build_nutrition_adjustment_proposal(
 
     # 4. Bounded Energy Adjustment & Cumulative Ceiling (NUTRITION_ENERGY_ADJUSTMENT_V01)
     adj_status, delta, proposed_target, adj_reasons, adj_risks = calculate_bounded_energy_adjustment(
-        current_target_kcal=input_dto.current_target_energy_kcal,
+        current_target_kcal=current_target,
         cumulative_adaptive_adjustment_kcal=input_dto.cumulative_adaptive_adjustment_kcal,
     )
 
@@ -193,13 +197,13 @@ def build_nutrition_adjustment_proposal(
 
     fp = generate_proposal_fingerprint(
         eval_res.evaluation_id,
-        input_dto.current_target_energy_kcal,
+        current_target,
         proposed_target,
         delta,
     )
     exps = generate_proposal_explanations(
         adj_status,
-        input_dto.current_target_energy_kcal,
+        current_target,
         proposed_target,
         delta,
         adj_reasons,
@@ -207,12 +211,13 @@ def build_nutrition_adjustment_proposal(
 
     return NutritionAdjustmentProposalDTO(
         proposal_id=f"prop_{uuid.uuid4().hex[:16]}",
+        proposal_domain="ENERGY_TARGET",
         status=adj_status,
         lifecycle_state=ProposalLifecycleState.PENDING,
         proposal_type=prop_type,
-        current_target_kcal=round(input_dto.current_target_energy_kcal, 1),
-        proposed_target_kcal=round(proposed_target, 1),
-        delta_kcal=round(delta, 1),
+        current_target_kcal=current_target,
+        proposed_target_kcal=proposed_target,
+        delta_kcal=delta,
         confidence=eval_res.confidence,
         evidence_summary=evidence_snapshot,
         risk_flags=adj_risks,

@@ -8,15 +8,15 @@ from app.nutrition_adjustment_proposal.constants import (
 
 
 def calculate_bounded_energy_adjustment(
-    current_target_kcal: float,
-    cumulative_adaptive_adjustment_kcal: float = 0.0,
-) -> Tuple[ProposalStatus, float, float, List[AdjustmentProposalReasonCode], List[RiskFlag]]:
+    current_target_kcal: int,
+    cumulative_adaptive_adjustment_kcal: int = 0,
+) -> Tuple[ProposalStatus, int, int, List[AdjustmentProposalReasonCode], List[RiskFlag]]:
     """
     Calculates bounded energy target adjustment using NUTRITION_ENERGY_ADJUSTMENT_V01.
     Returns (status, delta_kcal, proposed_target_kcal, reasons, risks).
     """
-    step = ProposalPolicy.DEFAULT_ENERGY_ADJUSTMENT_STEP_KCAL
-    new_cumulative = cumulative_adaptive_adjustment_kcal + step
+    step = int(ProposalPolicy.DEFAULT_ENERGY_ADJUSTMENT_STEP_KCAL)
+    new_cumulative = int(cumulative_adaptive_adjustment_kcal) + step
 
     reasons: List[AdjustmentProposalReasonCode] = []
     risks: List[RiskFlag] = []
@@ -27,8 +27,8 @@ def calculate_bounded_energy_adjustment(
         risks.append(RiskFlag.ADAPTIVE_LIMIT_NEAR)
         return (
             ProposalStatus.ADAPTIVE_LIMIT_REACHED,
-            0.0,
-            current_target_kcal,
+            0,
+            int(current_target_kcal),
             reasons,
             risks,
         )
@@ -42,7 +42,7 @@ def calculate_bounded_energy_adjustment(
         AdjustmentProposalReasonCode.ENERGY_TARGET_REVIEW_RECOMMENDED,
     ])
 
-    proposed_target = current_target_kcal + step
+    proposed_target = int(current_target_kcal) + step
 
     return (
         ProposalStatus.PROPOSAL_READY,

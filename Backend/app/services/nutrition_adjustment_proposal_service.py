@@ -60,15 +60,27 @@ class NutritionAdjustmentProposalService:
         db: Session,
         proposal_id: str,
         owner_user_id: str,
+        current_target_energy_kcal: Optional[int] = None,
+        current_eligibility_status: Optional[str] = None,
+        last_evidence_updated_at: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """
+        Accepts proposal with strict revalidation of status, expiration, safety eligibility,
+        evidence watermarks, and target freshness.
+        """
         record = NutritionAdjustmentProposalRepository.get_proposal_by_id(db, proposal_id, owner_user_id)
         if not record:
             raise ValueError("Proposal not found.")
 
+        # 1. Lifecycle State Gate
         if record.lifecycle_state != ProposalLifecycleState.PENDING.value:
             raise ValueError(f"Proposal cannot be accepted from state '{record.lifecycle_state}'.")
 
-        # Expiration check
+        # 2. Readiness Gate
+        if record.status != ProposalStatus.PROPOSAL_READY.value:
+            raise ValueError(f"Proposal with status '{record.status}' cannot be accepted.")
+
+        # 3. Expiration Revalidation
         now_dt = datetime.now(timezone.utc)
         if record.expires_at:
             exp_dt = record.expires_at if record.expires_at.tzinfo else record.expires_at.replace(tzinfo=timezone.utc)
@@ -77,6 +89,38 @@ class NutritionAdjustmentProposalService:
                     db, proposal_id, owner_user_id, ProposalLifecycleState.EXPIRED
                 )
                 raise ValueError("Proposal has expired and cannot be accepted.")
+
+        # 4. Clinical Safety Eligibility Revalidation
+        if current_eligibility_status:
+            norm_elig = str(current_eligibility_status).upper().strip()
+            if any(k in norm_elig for k in ("OUT_OF_SCOPE", "NOT_ELIGIBLE", "BLOCKED")):
+                NutritionAdjustmentProposalRepository.update_lifecycle_state(
+                    db, proposal_id, owner_user_id, ProposalLifecycleState.SUPERSEDED
+                )
+                raise ValueError("Latest nutrition eligibility is not valid. Proposal cannot be accepted.")
+
+        # 5. Target Freshness Revalidation (Stale target detection)
+        if current_target_energy_kcal is not None:
+            if int(current_target_energy_kcal) != int(record.current_target_kcal):
+                NutritionAdjustmentProposalRepository.update_lifecycle_state(
+                    db, proposal_id, owner_user_id, ProposalLifecycleState.SUPERSEDED
+                )
+                raise ValueError("Authoritative current energy target has changed. Proposal is stale and cannot be accepted.")
+
+        # 6. Evidence Watermark Revalidation (New evidence after evaluation invalidates proposal)
+        if last_evidence_updated_at and record.created_at:
+            try:
+                evid_dt = datetime.fromisoformat(last_evidence_updated_at)
+                evid_dt = evid_dt if evid_dt.tzinfo else evid_dt.replace(tzinfo=timezone.utc)
+                created_dt = record.created_at if record.created_at.tzinfo else record.created_at.replace(tzinfo=timezone.utc)
+                if evid_dt > created_dt:
+                    NutritionAdjustmentProposalRepository.update_lifecycle_state(
+                        db, proposal_id, owner_user_id, ProposalLifecycleState.SUPERSEDED
+                    )
+                    raise ValueError("New check-in or weight evidence was logged after proposal creation. A fresh evaluation is required.")
+            except Exception as e:
+                if "New check-in" in str(e):
+                    raise
 
         updated = NutritionAdjustmentProposalRepository.update_lifecycle_state(
             db, proposal_id, owner_user_id, ProposalLifecycleState.ACCEPTED
@@ -106,13 +150,14 @@ class NutritionAdjustmentProposalService:
     def _record_to_dict(record) -> Dict[str, Any]:
         return {
             "proposal_id": record.id,
+            "proposal_domain": getattr(record, "proposal_domain", "ENERGY_TARGET"),
             "evaluation_id": record.evaluation_id,
             "status": record.status,
             "lifecycle_state": record.lifecycle_state,
             "proposal_type": record.proposal_type,
-            "current_target_kcal": record.current_target_kcal,
-            "proposed_target_kcal": record.proposed_target_kcal,
-            "delta_kcal": record.delta_kcal,
+            "current_target_kcal": int(record.current_target_kcal),
+            "proposed_target_kcal": int(record.proposed_target_kcal),
+            "delta_kcal": int(record.delta_kcal),
             "confidence": record.confidence,
             "fingerprint": record.fingerprint,
             "evidence_summary": record.evidence_snapshot,
